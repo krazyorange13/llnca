@@ -65,19 +65,20 @@ class NCA(nn.Module):
         with torch.no_grad():
             self.seq[-1].weight.zero_()  # type: ignore
 
-    def step(self, x, update_rate=None):
+    def step(self, x, freeze_mask=None, update_rate=None):
         pre_alive_mask = self.get_alive_mask(x)
 
         y = self.perception(x)
         y = self.seq(y)
 
         update_mask = self.get_update_mask(y.shape, update_rate)
-        # x.add_(y * update_mask)
-        x = x + y * update_mask
+        if freeze_mask is not None:
+            x = x + y * update_mask * freeze_mask
+        else:
+            x = x + y * update_mask
 
         post_alive_mask = self.get_alive_mask(x)
         combined_mask = pre_alive_mask * post_alive_mask
-        # x.mul_(combined_mask)
         x = x * combined_mask
 
         return x
@@ -90,14 +91,20 @@ class NCA(nn.Module):
 
     def get_alive_mask(self, x, threshold=0.1):
         # x = F.pad(x, (1, 1, 1, 1), mode="circular")
-        # NOTE: for single L channel
-        alpha = x[:, :1, :, :]
-        mask = F.max_pool2d(alpha, kernel_size=3, stride=1, padding=1) > threshold
+        # sum across all channels, if the cells have any values then they're good idrk
+        alpha = x[:, :4, :, :]
+        pool = (
+            F.max_pool2d(alpha, kernel_size=3, stride=1, padding=1)
+            .abs()
+            .sum(dim=1)
+            .unsqueeze(1)
+        )
+        mask = pool > threshold
         return mask.float()
 
-    def forward(self, x, steps=1, update_rate=None):
+    def forward(self, x, steps=1, freeze_mask=None, update_rate=None):
         for i in range(steps):
-            x = self.step(x, update_rate=update_rate)
+            x = self.step(x, freeze_mask=freeze_mask, update_rate=update_rate)
         return x
 
 
@@ -131,6 +138,9 @@ class Renderer:
 
         return np.asarray(img)
 
+    def bbox(self, text):
+        return self.font.getbbox(text)
+
 
 class SentenceDataset:
     def __init__(self, file, bin_size=16, trunc_ratio=3):
@@ -145,6 +155,7 @@ class SentenceDataset:
 
     def load_sentences(self, file):
         with open(file) as f:
+            # load sentences from a file with one sentence per line
             sentences = f.readlines()
         return sentences
 
@@ -183,15 +194,17 @@ class Pool:
         self.reset()
 
     def reset(self):
-        pairs = [self.get_pair() for i in range(self.pool_size)]
-        sentences, seeds = zip(*pairs)
+        rows = [self.get_row() for i in range(self.pool_size)]
+        sentences, seeds, freezes = zip(*rows)
         self.ys = torch.stack(sentences)
         self.xs = torch.stack(seeds)
+        self.fs = torch.stack(freezes)
 
     def sample(self, batch_size=8, damaged=3):
         self.idxs = torch.randperm(self.pool_size)[:batch_size]
         self.y_batch = self.ys[self.idxs]
         self.x_batch = self.xs[self.idxs]
+        self.f_batch = self.fs[self.idxs]
 
         losses = F.mse_loss(
             self.x_batch[:, :1, :, :],
@@ -201,16 +214,19 @@ class Pool:
         sorted_idxs = torch.argsort(losses)
 
         replace_idx = sorted_idxs[-1]
-        sentence, seed = self.get_pair()
+        sentence, seed, freeze_mask = self.get_row()
         self.y_batch[replace_idx] = sentence
         self.x_batch[replace_idx] = seed
+        self.f_batch[replace_idx] = freeze_mask
 
-        damaged_idxs = sorted_idxs[:damaged]
-        self.x_batch[damaged_idxs] = self.damage(self.x_batch[damaged_idxs])
+        # damaged_idxs = sorted_idxs[:damaged]
+        # self.x_batch[damaged_idxs] = self.damage(
+        #     self.x_batch[damaged_idxs], self.f_batch[damaged_idxs]
+        # )
 
-        return self.x_batch
+        return self.x_batch, self.f_batch
 
-    def get_pair(self):
+    def get_row(self):
         farm = "p'" + "w" * (self.dataset.bin_size * (self.bin + 1) - 1)
         sentence, seed = random.choice(self.dataset.bins[self.bin])
         sentence_img = self.renderer.text(sentence, match=farm) / 255.0
@@ -226,10 +242,16 @@ class Pool:
         c, h, w = seed_t.shape
         seed_hid = torch.zeros((self.channels - c, h, w))
         seed_t = torch.cat([seed_t, seed_hid])
-        return sentence_t, seed_t
 
-    def damage(self, batch):
-        b, c, h, w = batch.shape
+        freeze_bbox = self.renderer.bbox(seed)
+        x1, y1, x2, y2 = freeze_bbox
+        freeze_t = torch.ones(seed_t.shape)
+        freeze_t[:c, y1 - 1 : y2 - 1, x1:x2] = 0.0
+
+        return sentence_t, seed_t, freeze_t
+
+    def damage(self, x_batch, f_batch):
+        b, c, h, w = x_batch.shape
         grid = torch.meshgrid(
             torch.linspace(-1, 1, h), torch.linspace(-1, 1, w), indexing="ij"
         )
@@ -237,7 +259,7 @@ class Pool:
         center = torch.rand(b, 2, 1, 1) - 0.5
         radius = 0.3 * torch.rand(b, 1, 1, 1) + 0.1
         mask = ((grid - center) * (grid - center)).sum(1, keepdim=True).sqrt() > radius
-        return batch * mask.float()
+        return x_batch * mask.float()
 
     def update(self, samples):
         loss = F.mse_loss(samples[:, :1, :, :], self.ys[self.idxs])
@@ -291,7 +313,7 @@ class LLNCA:
         )
         self.renderer = Renderer(self.config.font_name, self.config.font_size)
 
-        self.nca = NCA()
+        self.nca = NCA(channels=self.config.channels)
         self.optimizer = optim.Adam(
             self.nca.parameters(), lr=self.config.lr, betas=self.config.betas
         )
@@ -302,7 +324,7 @@ class LLNCA:
         self.loaded_epoch = 0
 
         if state is not None:
-            self.nca = NCA()
+            self.nca = NCA(channels=self.config.channels)
             self.nca.load_state_dict(state["nca"])
             self.optimizer.load_state_dict(state["optimizer"])
             self.scheduler.load_state_dict(state["scheduler"])
@@ -327,9 +349,9 @@ class LLNCA:
             ):
                 curr_epoch = i
                 self.optimizer.zero_grad()
-                x = self.poolpool.sample(self.config.batch_size)
+                x, freeze_mask = self.poolpool.sample(self.config.batch_size)
                 steps = random.randint(x.shape[3], int(x.shape[3] * 1.25))
-                y = self.nca(x, steps)
+                y = self.nca(x, steps, freeze_mask)
                 loss = self.poolpool.update(y)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.nca.parameters(), max_norm=1.0)
@@ -362,16 +384,17 @@ if __name__ == "__main__":
         llnca = LLNCA(config, state)
     else:
         config = LLNCAConfig(
-            name="ezpz",
+            name="alphar",
             folder="models",
-            sentences_file="data/norm/ezpz.txt",
+            sentences_file="data/norm/ezpzr.txt",
             font_name="/use/share/fonts/opentype/baby.otf",
             font_size=8,
             bin_size=16,
             trunc_ratio=3,
-            epochs=1000,
+            epochs=5000,
             batch_size=8,
-            channels=16,
+            channels=32,
         )
         llnca = LLNCA(config, None)
+
     llnca.train()

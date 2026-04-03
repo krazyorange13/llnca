@@ -49,15 +49,16 @@ class Visualization:
             renderer=self.llnca.renderer,
             channels=self.llnca.config.channels,
         )
-        y, x = pool.get_pair()
+        y, x, f = pool.get_row()
         x = x.unsqueeze(0)
+        f = f.unsqueeze(0)
         for i in tqdm(range(self.frame_count), leave=False):
             with torch.no_grad():
-                x = self.llnca.nca.step(x)
+                x = self.llnca.nca.step(x, f)
             self.frames.append(self.nca_to_img(x))
 
     def nca_to_img(self, x: torch.Tensor):
-        y = torch.clamp(x[0, :4], 0.0, 1.0)
+        y = torch.clamp(x[0, :1], 0.0, 1.0)
         y = 1 - y
         # rgb = y[:3]
         # alpha = y[3:4]
