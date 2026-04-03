@@ -13,8 +13,8 @@ erased, the NCA can regrow the "i". further, if the NCA is trained on an image
 of the sentence "hello world!", and the "world!" is erased, the NCA can regenerate
 the "world!". by now you can probably see where this is going :&#8203;P i hypothesize
 that if an NCA is trained on many, many images of text, then it will be able repair
-missing words based on the surrounding words. i aim to push NCAs to their limits
-by tasking them to complete truncated texts, similar to how LLMs work.
+missing words based on the surrounding words. i aim to push NCA to their limits
+by training them to complete truncated texts, similar to how LLMs work.
 
 ### pipeline
 
