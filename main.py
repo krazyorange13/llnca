@@ -56,9 +56,9 @@ class NCA(nn.Module):
 
         self.seq = nn.Sequential(
             nn.Conv2d(self.channels * 4, 64, kernel_size=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Conv2d(64, 64, kernel_size=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Conv2d(64, self.channels, kernel_size=1, bias=False),
         )
 
@@ -92,7 +92,7 @@ class NCA(nn.Module):
     def get_alive_mask(self, x, threshold=0.1):
         # x = F.pad(x, (1, 1, 1, 1), mode="circular")
         # sum across all channels, if the cells have any values then they're good idrk
-        alpha = x[:, :4, :, :]
+        alpha = x[:, :, :, :]
         pool = (
             F.max_pool2d(alpha, kernel_size=3, stride=1, padding=1)
             .abs()
@@ -219,10 +219,10 @@ class Pool:
         self.x_batch[replace_idx] = seed
         self.f_batch[replace_idx] = freeze_mask
 
-        # damaged_idxs = sorted_idxs[:damaged]
-        # self.x_batch[damaged_idxs] = self.damage(
-        #     self.x_batch[damaged_idxs], self.f_batch[damaged_idxs]
-        # )
+        damaged_idxs = sorted_idxs[:damaged]
+        self.x_batch[damaged_idxs] = self.damage(
+            self.x_batch[damaged_idxs], self.f_batch[damaged_idxs]
+        )
 
         return self.x_batch, self.f_batch
 
@@ -296,8 +296,9 @@ class LLNCAConfig:
     epochs: int
     batch_size: int
     channels: int
+    backprop_chunk: int = 32
     lr: float = 2e-3
-    lr_gamma: float = 0.9999
+    lr_gamma: float = 0.99
     betas: tuple[float, float] = (0.9, 0.9999)
 
 
@@ -350,15 +351,27 @@ class LLNCA:
                 curr_epoch = i
                 self.optimizer.zero_grad()
                 x, freeze_mask = self.poolpool.sample(self.config.batch_size)
-                steps = random.randint(x.shape[3], int(x.shape[3] * 1.25))
-                y = self.nca(x, steps, freeze_mask)
-                loss = self.poolpool.update(y)
-                loss.backward()
+                total_steps = random.randint(x.shape[3], int(x.shape[3] * 1.25))
+                acc_loss = 0
+
+                for step_idx in range(0, total_steps, self.config.backprop_chunk):
+                    chunk_steps = min(
+                        self.config.backprop_chunk, total_steps - step_idx
+                    )
+                    x = self.nca(x, chunk_steps, freeze_mask)
+                    loss = self.poolpool.update(x)
+                    loss.backward()
+                    x = x.detach()
+                    x = torch.clamp(x, -1.0, 1.0)
+                    acc_loss += loss.item()
+
                 torch.nn.utils.clip_grad_norm_(self.nca.parameters(), max_norm=1.0)
                 self.optimizer.step()
                 self.scheduler.step()
+
                 if i % 100 == 0:
-                    tqdm.write(f"epoch {curr_epoch} loss: {loss.item()}")
+                    tqdm.write(f"epoch {curr_epoch} loss: {acc_loss}")
+
         except KeyboardInterrupt:
             print("training cancelled")
 
@@ -384,16 +397,17 @@ if __name__ == "__main__":
         llnca = LLNCA(config, state)
     else:
         config = LLNCAConfig(
-            name="alphar",
+            name="alpha",
             folder="models",
             sentences_file="data/norm/ezpzr.txt",
             font_name="/use/share/fonts/opentype/baby.otf",
             font_size=8,
             bin_size=16,
             trunc_ratio=3,
-            epochs=5000,
+            epochs=1000,
             batch_size=8,
-            channels=32,
+            channels=16,
+            backprop_chunk=32,
         )
         llnca = LLNCA(config, None)
 

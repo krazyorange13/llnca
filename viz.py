@@ -42,7 +42,7 @@ class Visualization:
         self.display_frames()
 
     def generate_frames(self):
-        print("rendering animation...")
+        # print("rendering animation...")
         pool = Pool(
             self.llnca.dataset,
             bin=1,
@@ -52,7 +52,7 @@ class Visualization:
         y, x, f = pool.get_row()
         x = x.unsqueeze(0)
         f = f.unsqueeze(0)
-        for i in tqdm(range(self.frame_count), leave=False):
+        for i in tqdm(range(self.frame_count), leave=False, desc="rendering"):
             with torch.no_grad():
                 x = self.llnca.nca.step(x, f)
             self.frames.append(self.nca_to_img(x))
@@ -68,8 +68,8 @@ class Visualization:
         return img
 
     def save_frames(self):
-        print("saving animation...")
-        for i in tqdm(range(len(self.frames)), leave=False):
+        # print("saving animation...")
+        for i in tqdm(range(len(self.frames)), leave=False, desc="saving"):
             frame = self.frames[i]
             j = str(i).zfill(len(str(len(self.frames) - 1)))
             cv2.imwrite(
@@ -78,7 +78,7 @@ class Visualization:
             )
 
     def generate_movie(self):
-        print("generating movie... ", end="", flush=True)
+        # print("generating movie... ", end="", flush=True)
         d = str(len(str(len(self.frames) - 1))).zfill(2)
         anim_in = f"anim/{self.name}-%{d}d.png"
         anim_out = f"movies/{self.name}.mp4"
@@ -106,10 +106,10 @@ class Visualization:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        print(f"saved to {anim_out}")
+        print(f"movie saved: {anim_out}")
 
     def display_frames(self):
-        print("displaying animation...")
+        # print("displaying animation...")
         quit = False
         window = self.name
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
