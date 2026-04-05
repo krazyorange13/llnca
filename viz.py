@@ -19,12 +19,15 @@ class Visualization:
         frame_count: int,
         mod: str | None = None,
         ffmpeg: bool | None = None,
+        channel_range: tuple[int, int] | None = None,
     ):
         self.path = path
         state = torch.load(self.path, weights_only=False)
         self.llnca = LLNCA(state["config"], state)
+        self.epochs = state["curr_epoch"]
         self.frames = []
         self.frame_count = frame_count
+        self.channel_range = channel_range
 
         self.mod = mod
         self.ffmpeg = ffmpeg
@@ -55,10 +58,16 @@ class Visualization:
         for i in tqdm(range(self.frame_count), leave=False, desc="rendering"):
             with torch.no_grad():
                 x = self.llnca.nca.step(x, f)
+                x = torch.clamp(x, -2.0, 2.0)
             self.frames.append(self.nca_to_img(x))
 
     def nca_to_img(self, x: torch.Tensor):
-        y = torch.clamp(x[0, :1], 0.0, 1.0)
+        if self.channel_range is not None:
+            x_ = x[0, self.channel_range[0] : self.channel_range[1]]
+        else:
+            x_ = x[0, :1]
+
+        y = torch.clamp(x_, 0.0, 1.0)
         y = 1 - y
         # rgb = y[:3]
         # alpha = y[3:4]
@@ -81,7 +90,7 @@ class Visualization:
         # print("generating movie... ", end="", flush=True)
         d = str(len(str(len(self.frames) - 1))).zfill(2)
         anim_in = f"anim/{self.name}-%{d}d.png"
-        anim_out = f"movies/{self.name}.mp4"
+        anim_out = f"movies/{self.name}-{self.epochs}.mp4"
         scale_factor = 16
         subprocess.run(
             [
@@ -92,7 +101,7 @@ class Visualization:
                 "-i",
                 anim_in,
                 "-vf",
-                f"scale={scale_factor}*iw:-1:flags=neighbor,format=yuv444p",
+                f"scale={scale_factor}*iw:-1:flags=neighbor,format=yuv420p",
                 "-c:v",
                 "libx264",
                 "-crf",
@@ -134,8 +143,16 @@ if __name__ == "__main__":
     if ffmpeg:
         args.remove("-ffmpeg")
 
+    channel_range = None
+    for arg in args:
+        if ":" in arg:
+            start, stop = arg.split(":")[:2]
+            channel_range = (int(start), int(stop))
+            args.remove(arg)
+            break
+
     path = args[1]
     mod = args[2] if 2 < len(args) else None
 
-    viz = Visualization(path, 1000, mod=mod, ffmpeg=ffmpeg)
+    viz = Visualization(path, 1000, mod=mod, ffmpeg=ffmpeg, channel_range=channel_range)
     viz.viz()

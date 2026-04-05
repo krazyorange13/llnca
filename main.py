@@ -55,11 +55,13 @@ class NCA(nn.Module):
         self.perception.conv.weight.requires_grad = False
 
         self.seq = nn.Sequential(
-            nn.Conv2d(self.channels * 4, 64, kernel_size=1),
+            nn.Conv2d(self.channels * 4, 128, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(64, 64, kernel_size=1),
+            nn.Conv2d(128, 128, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(64, self.channels, kernel_size=1, bias=False),
+            nn.Conv2d(128, 128, kernel_size=1),
+            nn.LeakyReLU(),
+            nn.Conv2d(128, self.channels, kernel_size=1, bias=False),
         )
 
         with torch.no_grad():
@@ -89,10 +91,10 @@ class NCA(nn.Module):
         update_mask = (torch.rand(b, 1, h, w) < update_rate).float()
         return update_mask
 
-    def get_alive_mask(self, x, threshold=0.1):
+    def get_alive_mask(self, x, threshold=0.01):
         # x = F.pad(x, (1, 1, 1, 1), mode="circular")
         # sum across all channels, if the cells have any values then they're good idrk
-        alpha = x[:, :, :, :]
+        alpha = x[:, :2, :, :]
         pool = (
             F.max_pool2d(alpha, kernel_size=3, stride=1, padding=1)
             .abs()
@@ -227,7 +229,7 @@ class Pool:
         return self.x_batch, self.f_batch
 
     def get_row(self):
-        farm = "p'" + "w" * (self.dataset.bin_size * (self.bin + 1) - 1)
+        farm = "p'" + "w" * (self.dataset.bin_size * (self.bin + 0) + 1)
         sentence, seed = random.choice(self.dataset.bins[self.bin])
         sentence_img = self.renderer.text(sentence, match=farm) / 255.0
         seed_img = self.renderer.text(seed, match=farm) / 255.0
@@ -284,7 +286,7 @@ class PoolPool:
         return self.pools[self.idx].update(samples)
 
 
-@dataclass(frozen=True)
+@dataclass
 class LLNCAConfig:
     name: str
     folder: str
@@ -298,7 +300,7 @@ class LLNCAConfig:
     channels: int
     backprop_chunk: int = 32
     lr: float = 2e-3
-    lr_gamma: float = 0.99
+    lr_gamma: float = 0.9999
     betas: tuple[float, float] = (0.9, 0.9999)
 
 
@@ -331,6 +333,17 @@ class LLNCA:
             self.scheduler.load_state_dict(state["scheduler"])
             self.loaded_epoch = state["curr_epoch"]
 
+    def loss(self, x):
+        mse_loss = self.poolpool.update(x)
+
+        # alive_mask = (self.nca.get_alive_mask(x) > 0).expand(-1, 16, -1, -1)
+        # alive_x = x[alive_mask]
+        # hidden_loss = 0.01 / (torch.std(alive_x) + 1e-4)
+
+        # return mse_loss + hidden_loss
+
+        return mse_loss
+
     def train(self):
         print(f"model name: {self.config.name}")
         print(f"sentences file: {self.config.sentences_file}")
@@ -351,18 +364,18 @@ class LLNCA:
                 curr_epoch = i
                 self.optimizer.zero_grad()
                 x, freeze_mask = self.poolpool.sample(self.config.batch_size)
+
                 total_steps = random.randint(x.shape[3], int(x.shape[3] * 1.25))
                 acc_loss = 0
-
                 for step_idx in range(0, total_steps, self.config.backprop_chunk):
                     chunk_steps = min(
                         self.config.backprop_chunk, total_steps - step_idx
                     )
                     x = self.nca(x, chunk_steps, freeze_mask)
-                    loss = self.poolpool.update(x)
+                    loss = self.loss(x)
                     loss.backward()
                     x = x.detach()
-                    x = torch.clamp(x, -1.0, 1.0)
+                    x = torch.clamp(x, -2.0, 2.0)
                     acc_loss += loss.item()
 
                 torch.nn.utils.clip_grad_norm_(self.nca.parameters(), max_norm=1.0)
@@ -391,22 +404,27 @@ class LLNCA:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 2:
+    if len(sys.argv) in [2, 3]:
         state = torch.load(sys.argv[1], weights_only=False)
         config = state["config"]
+
+        if len(sys.argv) == 3:
+            new_epochs = int(sys.argv[2])
+            config.epochs = new_epochs
+
         llnca = LLNCA(config, state)
     else:
         config = LLNCAConfig(
-            name="alpha",
+            name="beta",
             folder="models",
             sentences_file="data/norm/ezpzr.txt",
             font_name="/use/share/fonts/opentype/baby.otf",
             font_size=8,
             bin_size=16,
             trunc_ratio=3,
-            epochs=1000,
+            epochs=8000,
             batch_size=8,
-            channels=16,
+            channels=32,
             backprop_chunk=32,
         )
         llnca = LLNCA(config, None)
