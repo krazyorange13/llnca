@@ -37,6 +37,12 @@ class Visualization:
         else:
             self.name = self.llnca.config.name
 
+        self.model = (
+            self.llnca.nca
+            if state["curr_epoch"] < state["swa_start"]
+            else self.llnca.swa.module
+        )
+
     def viz(self):
         self.generate_frames()
         self.save_frames()
@@ -57,7 +63,7 @@ class Visualization:
         f = f.unsqueeze(0)
         for i in tqdm(range(self.frame_count), leave=False, desc="rendering"):
             with torch.no_grad():
-                x = self.llnca.nca.step(x, f)
+                x = self.model.step(x, f)  # type: ignore
                 x = torch.clamp(x, -2.0, 2.0)
             self.frames.append(self.nca_to_img(x))
 
@@ -90,7 +96,7 @@ class Visualization:
         # print("generating movie... ", end="", flush=True)
         d = str(len(str(len(self.frames) - 1))).zfill(2)
         anim_in = f"anim/{self.name}-%{d}d.png"
-        anim_out = f"movies/{self.name}-{self.epochs}.mp4"
+        anim_out = f"movies/{self.name}-{self.epochs + 1}.mp4"
         scale_factor = 16
         subprocess.run(
             [

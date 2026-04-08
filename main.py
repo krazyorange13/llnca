@@ -1,3 +1,4 @@
+import os
 import sys
 import random
 from collections import defaultdict
@@ -12,6 +13,7 @@ import torch
 from torch import optim
 from torch import nn
 from torch.nn import functional as F
+from torch.optim.swa_utils import AveragedModel, SWALR
 
 from tqdm import tqdm
 
@@ -55,17 +57,19 @@ class NCA(nn.Module):
         self.perception.conv.weight.requires_grad = False
 
         self.seq = nn.Sequential(
-            nn.Conv2d(self.channels * 4, 128, kernel_size=1),
+            nn.Conv2d(self.channels * 4, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(128, 128, kernel_size=1),
+            nn.Conv2d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(128, 128, kernel_size=1),
+            nn.Conv2d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(128, self.channels, kernel_size=1, bias=False),
+            nn.Conv2d(256, 256, kernel_size=1),
+            nn.LeakyReLU(),
+            nn.Conv2d(256, self.channels, kernel_size=1, bias=False),
         )
 
-        with torch.no_grad():
-            self.seq[-1].weight.zero_()  # type: ignore
+        # with torch.no_grad():
+        #     self.seq[-1].weight.zero_()  # type: ignore
 
     def step(self, x, freeze_mask=None, update_rate=None):
         pre_alive_mask = self.get_alive_mask(x)
@@ -208,6 +212,13 @@ class Pool:
         self.x_batch = self.xs[self.idxs]
         self.f_batch = self.fs[self.idxs]
 
+        # x_batch_ = self.x_batch[:, :1, :, :]
+        # b, c, h, w = x_batch_.shape
+        # img_x = x_batch_.permute(1, 0, 2, 3).reshape(1, c, b * h, w)
+        # img_y = self.y_batch.permute(1, 0, 2, 3).reshape(1, c, b * h, w)
+        # img_f = self.f_batch.permute(1, 0, 2, 3).reshape(1, c, b * h, w)
+        # img = torch.cat([img_x, img_y, img_f], dim=3)
+
         losses = F.mse_loss(
             self.x_batch[:, :1, :, :],
             self.y_batch,
@@ -215,16 +226,19 @@ class Pool:
         ).sum(dim=(1, 2, 3))
         sorted_idxs = torch.argsort(losses)
 
+        # tqdm.write(str(losses))
+        # self.display(img)
+
         replace_idx = sorted_idxs[-1]
         sentence, seed, freeze_mask = self.get_row()
         self.y_batch[replace_idx] = sentence
         self.x_batch[replace_idx] = seed
         self.f_batch[replace_idx] = freeze_mask
 
-        damaged_idxs = sorted_idxs[:damaged]
-        self.x_batch[damaged_idxs] = self.damage(
-            self.x_batch[damaged_idxs], self.f_batch[damaged_idxs]
-        )
+        # damaged_idxs = sorted_idxs[:damaged]
+        # self.x_batch[damaged_idxs] = self.damage(
+        #     self.x_batch[damaged_idxs], self.f_batch[damaged_idxs]
+        # )
 
         return self.x_batch, self.f_batch
 
@@ -247,7 +261,7 @@ class Pool:
 
         freeze_bbox = self.renderer.bbox(seed)
         x1, y1, x2, y2 = freeze_bbox
-        freeze_t = torch.ones(seed_t.shape)
+        freeze_t = torch.ones(1, h, w)
         freeze_t[:c, y1 - 1 : y2 - 1, x1:x2] = 0.0
 
         return sentence_t, seed_t, freeze_t
@@ -271,6 +285,23 @@ class Pool:
         self.xs[self.idxs] = samples
 
         return loss
+
+    def display(self, x):
+        img = self.nca_to_img(x)
+        window = "hi"
+        cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+        while True:
+            cv2.imshow(window, img)
+            if cv2.waitKey(int(1000 / 60)) & 0xFF == ord("q"):
+                break
+        cv2.destroyAllWindows()
+
+    def nca_to_img(self, x: torch.Tensor):
+        x_ = x[0, :1]
+        y = torch.clamp(x_, 0.0, 1.0)
+        y = 1 - y
+        img = y.detach().permute(1, 2, 0).numpy()
+        return img
 
 
 class PoolPool:
@@ -298,6 +329,8 @@ class LLNCAConfig:
     epochs: int
     batch_size: int
     channels: int
+    swa_start: int
+    swa_lr: float
     backprop_chunk: int = 32
     lr: float = 2e-3
     lr_gamma: float = 0.9999
@@ -323,7 +356,13 @@ class LLNCA:
         self.scheduler = optim.lr_scheduler.ExponentialLR(
             self.optimizer, self.config.lr_gamma
         )
+        self.swa = AveragedModel(self.nca)
+        self.swa_start = self.config.swa_start
+        self.swa_scheduler = SWALR(self.optimizer, swa_lr=self.config.swa_lr)
 
+        self.min_loss = float("inf")
+        self.min_model = ""
+        self.curr_epoch = 0
         self.loaded_epoch = 0
 
         if state is not None:
@@ -331,6 +370,10 @@ class LLNCA:
             self.nca.load_state_dict(state["nca"])
             self.optimizer.load_state_dict(state["optimizer"])
             self.scheduler.load_state_dict(state["scheduler"])
+            self.swa.load_state_dict(state["swa"])
+            self.swa_start = state["swa_start"]
+            self.swa_scheduler.load_state_dict(state["swa_scheduler"])
+            self.min_loss = state["min_loss"]
             self.loaded_epoch = state["curr_epoch"]
 
     def loss(self, x):
@@ -352,7 +395,9 @@ class LLNCA:
             self.dataset, bin=1, renderer=self.renderer, channels=self.config.channels
         )
         self.poolpool = PoolPool([pool])
-        curr_epoch = 0
+
+        acc_loss = 0
+        acc_epochs = 0
 
         try:
             for i in tqdm(
@@ -361,12 +406,11 @@ class LLNCA:
                 total=self.config.epochs,
                 leave=False,
             ):
-                curr_epoch = i
+                self.curr_epoch = i
                 self.optimizer.zero_grad()
                 x, freeze_mask = self.poolpool.sample(self.config.batch_size)
 
                 total_steps = random.randint(x.shape[3], int(x.shape[3] * 1.25))
-                acc_loss = 0
                 for step_idx in range(0, total_steps, self.config.backprop_chunk):
                     chunk_steps = min(
                         self.config.backprop_chunk, total_steps - step_idx
@@ -380,27 +424,51 @@ class LLNCA:
 
                 torch.nn.utils.clip_grad_norm_(self.nca.parameters(), max_norm=1.0)
                 self.optimizer.step()
-                self.scheduler.step()
 
-                if i % 100 == 0:
-                    tqdm.write(f"epoch {curr_epoch} loss: {acc_loss}")
+                if self.curr_epoch >= self.swa_start:
+                    self.swa.update_parameters(self.nca)
+                    self.swa_scheduler.step()
+                else:
+                    self.scheduler.step()
+
+                acc_epochs += 1
+
+                if i % 100 == 100 - 1:
+                    avg_loss = acc_loss / acc_epochs
+                    tqdm.write(f"epoch {self.curr_epoch + 1} loss: {avg_loss}")
+                    if avg_loss < self.min_loss:
+                        if self.min_model:
+                            os.remove(self.min_model)
+                        self.min_loss = avg_loss
+                        self.min_model = self.save()
+                    acc_loss = 0
+                    acc_epochs = 0
 
         except KeyboardInterrupt:
             print("training cancelled")
 
-        self.save(curr_epoch)
+        save_path = self.save()
+        print(f"model saved: {save_path}")
 
-    def save(self, curr_epoch):
+    def save(self, mod=""):
+        if mod:
+            mod = "-" + mod
         state = {
             "config": self.config,
-            "curr_epoch": curr_epoch,
+            "curr_epoch": self.curr_epoch,
             "nca": self.nca.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "scheduler": self.scheduler.state_dict(),
+            "swa": self.swa.state_dict(),
+            "swa_start": self.swa_start,
+            "swa_scheduler": self.swa_scheduler.state_dict(),
+            "min_loss": self.min_loss,
         }
-        save_path = f"{self.config.folder}/{self.config.name}-{curr_epoch + 1}.tar"
+        save_path = (
+            f"{self.config.folder}/{self.config.name}{mod}-{self.curr_epoch + 1}.tar"
+        )
         torch.save(state, save_path)
-        print(f"model saved: {save_path}")
+        return save_path
 
 
 if __name__ == "__main__":
@@ -415,17 +483,21 @@ if __name__ == "__main__":
         llnca = LLNCA(config, state)
     else:
         config = LLNCAConfig(
-            name="beta",
+            name="delta",
             folder="models",
             sentences_file="data/norm/ezpzr.txt",
             font_name="/use/share/fonts/opentype/baby.otf",
             font_size=8,
             bin_size=16,
             trunc_ratio=3,
-            epochs=8000,
+            epochs=10000,
             batch_size=8,
             channels=32,
+            swa_start=16000,
+            swa_lr=1e-3,
             backprop_chunk=32,
+            lr=1e-3,
+            lr_gamma=0.9999,
         )
         llnca = LLNCA(config, None)
 
