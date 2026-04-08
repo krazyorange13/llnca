@@ -57,15 +57,15 @@ class NCA(nn.Module):
         self.perception.conv.weight.requires_grad = False
 
         self.seq = nn.Sequential(
-            nn.Conv2d(self.channels * 4, 256, kernel_size=1),
+            nn.Conv2d(self.channels * 4, 64, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(256, 256, kernel_size=1),
+            nn.Conv2d(64, 64, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(256, 256, kernel_size=1),
+            nn.Conv2d(64, 64, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(256, 256, kernel_size=1),
+            nn.Conv2d(64, 64, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(256, self.channels, kernel_size=1, bias=False),
+            nn.Conv2d(64, self.channels, kernel_size=1, bias=False),
         )
 
         # with torch.no_grad():
@@ -142,10 +142,30 @@ class Renderer:
         # -bbox[0], -bbox[1] offsets any font internal padding
         draw.text((-bbox[0], -bbox[1]), text, fill=(255), font=self.font)
 
-        return np.asarray(img)
+        return np.asarray(img) / 255.0
 
     def bbox(self, text):
         return self.font.getbbox(text)
+
+
+class TokenRenderer:
+    def __init__(self):
+        self.num_bits = 7
+
+    def bin_encode(self, x):
+        idxs = np.arange(self.num_bits, dtype=np.float32)
+        return (x >> idxs) & 1
+
+    def text(self, text, match=None):
+        pad = max(0, len(match) - len(text)) if match is not None else 0
+        ords = [ord(char) for char in text]
+        bins = [self.bin_encode(ord_).T for ord_ in ords]
+        bins.extend([np.zeros(shape=(self.num_bits, 1), dtype=np.float32)] * pad)
+        tnsr = np.concat(bins, axis=1)
+        return tnsr
+
+    def bbox(self, text):
+        return (0, 0, len(text), 1)
 
 
 class SentenceDataset:
@@ -220,7 +240,7 @@ class Pool:
         # img = torch.cat([img_x, img_y, img_f], dim=3)
 
         losses = F.mse_loss(
-            self.x_batch[:, :1, :, :],
+            self.x_batch[:, : self.y_batch.shape[1], :, :],
             self.y_batch,
             reduction="none",
         ).sum(dim=(1, 2, 3))
@@ -245,8 +265,8 @@ class Pool:
     def get_row(self):
         farm = "p'" + "w" * (self.dataset.bin_size * (self.bin + 0) + 1)
         sentence, seed = random.choice(self.dataset.bins[self.bin])
-        sentence_img = self.renderer.text(sentence, match=farm) / 255.0
-        seed_img = self.renderer.text(seed, match=farm) / 255.0
+        sentence_img = self.renderer.text(sentence, match=farm)
+        seed_img = self.renderer.text(seed, match=farm)
         sentence_t = (
             torch.tensor(sentence_img, dtype=torch.float32)
             .unsqueeze(2)
@@ -278,7 +298,7 @@ class Pool:
         return x_batch * mask.float()
 
     def update(self, samples):
-        loss = F.mse_loss(samples[:, :1, :, :], self.ys[self.idxs])
+        loss = F.mse_loss(samples[:, : self.y_batch.shape[1], :, :], self.ys[self.idxs])
 
         samples = samples.detach()
         # replaces samples in batch returned by sample()
@@ -483,17 +503,17 @@ if __name__ == "__main__":
         llnca = LLNCA(config, state)
     else:
         config = LLNCAConfig(
-            name="delta",
+            name="alpha",
             folder="models",
             sentences_file="data/norm/ezpzr.txt",
             font_name="/use/share/fonts/opentype/baby.otf",
             font_size=8,
             bin_size=16,
             trunc_ratio=3,
-            epochs=10000,
+            epochs=24000,
             batch_size=8,
-            channels=32,
-            swa_start=16000,
+            channels=64,
+            swa_start=24000,
             swa_lr=1e-3,
             backprop_chunk=32,
             lr=1e-3,
