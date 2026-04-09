@@ -29,6 +29,8 @@ class Visualization:
         self.frame_count = frame_count
         self.channel_range = channel_range
 
+        self.texts = []
+
         self.mod = mod
         self.ffmpeg = ffmpeg
 
@@ -45,10 +47,11 @@ class Visualization:
 
     def viz(self):
         self.generate_frames()
-        self.save_frames()
-        if self.ffmpeg:
-            self.generate_movie()
-        self.display_frames()
+        # self.save_frames()
+        # if self.ffmpeg:
+        #     self.generate_movie()
+        # self.display_frames()
+        self.display_texts()
 
     def generate_frames(self):
         # print("rendering animation...")
@@ -66,12 +69,17 @@ class Visualization:
                 x = self.model.step(x, f)  # type: ignore
                 x = torch.clamp(x, -2.0, 2.0)
             self.frames.append(self.nca_to_img(x))
+            self.texts.append(self.nca_to_text(x))
 
     def nca_to_img(self, x: torch.Tensor):
-        if self.channel_range is not None:
-            x_ = x[0, self.channel_range[0] : self.channel_range[1]]
-        else:
-            x_ = x[0, :1]
+        # if self.channel_range is not None:
+        #    x_ = x[0, self.channel_range[0] : self.channel_range[1]]
+        # else:
+        #    x_ = x[0, :1]
+
+        b, c, h, w = x.shape
+        x_ = x[0, :, :, :]
+        x_ = x.reshape(c, w)
 
         y = torch.clamp(x_, 0.0, 1.0)
         y = 1 - y
@@ -79,8 +87,19 @@ class Visualization:
         # alpha = y[3:4]
         # bg_color = 255.0
         # blended = rgb * alpha + bg_color * (1.0 - alpha)
-        img = y.detach().permute(1, 2, 0).numpy()
+        img = y.detach().numpy()
         return img
+
+    def nca_to_text(self, x: torch.Tensor):
+        y = torch.round(x)
+        toks = [y[0, :7, 0, i].tolist() for i in range(x.shape[3])]
+        ords = [
+            int("".join("01"[int(i)] for i in reversed(bits)), base=2) for bits in toks
+        ]
+        chrs = [chr(ord_) for ord_ in ords]
+        chrs = [(chr_ if chr_.isprintable() else "�") for chr_ in chrs]
+        text = "".join(chrs)
+        return text
 
     def save_frames(self):
         # print("saving animation...")
@@ -136,6 +155,21 @@ class Visualization:
                     quit = True
                     break
         cv2.destroyAllWindows()
+
+    def display_texts(self):
+        texts_dedup = []
+        prev_text = None
+        j = 0
+        for i, text in enumerate(self.texts):
+            if text != prev_text:
+                texts_dedup.append(text)
+                j = i
+            prev_text = text
+        print("lines:", len(texts_dedup))
+        print("iterations:", j)
+        print()
+        for text in texts_dedup:
+            print(text)
 
 
 if __name__ == "__main__":

@@ -57,15 +57,17 @@ class NCA(nn.Module):
         self.perception.conv.weight.requires_grad = False
 
         self.seq = nn.Sequential(
-            nn.Conv2d(self.channels * 4, 64, kernel_size=1),
+            nn.Conv2d(self.channels * 4, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(64, 64, kernel_size=1),
+            nn.Conv2d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(64, 64, kernel_size=1),
+            nn.Conv2d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(64, 64, kernel_size=1),
+            nn.Conv2d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(64, self.channels, kernel_size=1, bias=False),
+            nn.Conv2d(256, 256, kernel_size=1),
+            nn.LeakyReLU(),
+            nn.Conv2d(256, self.channels, kernel_size=1, bias=False),
         )
 
         # with torch.no_grad():
@@ -98,7 +100,7 @@ class NCA(nn.Module):
     def get_alive_mask(self, x, threshold=0.01):
         # x = F.pad(x, (1, 1, 1, 1), mode="circular")
         # sum across all channels, if the cells have any values then they're good idrk
-        alpha = x[:, :2, :, :]
+        alpha = x[:, :7, :, :]
         pool = (
             F.max_pool2d(alpha, kernel_size=3, stride=1, padding=1)
             .abs()
@@ -153,15 +155,17 @@ class TokenRenderer:
         self.num_bits = 7
 
     def bin_encode(self, x):
-        idxs = np.arange(self.num_bits, dtype=np.float32)
+        idxs = np.arange(self.num_bits)
         return (x >> idxs) & 1
 
     def text(self, text, match=None):
-        pad = max(0, len(match) - len(text)) if match is not None else 0
+        pad = max(0, len(match) - len(text) + 1) if match is not None else 0
         ords = [ord(char) for char in text]
-        bins = [self.bin_encode(ord_).T for ord_ in ords]
-        bins.extend([np.zeros(shape=(self.num_bits, 1), dtype=np.float32)] * pad)
-        tnsr = np.concat(bins, axis=1)
+        bins = [
+            self.bin_encode(ord_).T.astype(np.float32)[np.newaxis, :] for ord_ in ords
+        ]
+        bins.extend([np.zeros(shape=(1, self.num_bits), dtype=np.float32)] * pad)
+        tnsr = np.stack(bins, axis=1)
         return tnsr
 
     def bbox(self, text):
@@ -208,7 +212,7 @@ class Pool:
         self,
         dataset: SentenceDataset,
         bin: int,
-        renderer: Renderer,
+        renderer: Renderer | TokenRenderer,
         channels: int,
         pool_size=64,
     ):
@@ -267,22 +271,17 @@ class Pool:
         sentence, seed = random.choice(self.dataset.bins[self.bin])
         sentence_img = self.renderer.text(sentence, match=farm)
         seed_img = self.renderer.text(seed, match=farm)
-        sentence_t = (
-            torch.tensor(sentence_img, dtype=torch.float32)
-            .unsqueeze(2)
-            .permute(2, 0, 1)
-        )
-        seed_t = (
-            torch.tensor(seed_img, dtype=torch.float32).unsqueeze(2).permute(2, 0, 1)
-        )
+        # (H, W, C) -> (C, H, W)
+        sentence_t = torch.tensor(sentence_img, dtype=torch.float32).permute(2, 0, 1)
+        seed_t = torch.tensor(seed_img, dtype=torch.float32).permute(2, 0, 1)
         c, h, w = seed_t.shape
         seed_hid = torch.zeros((self.channels - c, h, w))
         seed_t = torch.cat([seed_t, seed_hid])
 
         freeze_bbox = self.renderer.bbox(seed)
         x1, y1, x2, y2 = freeze_bbox
-        freeze_t = torch.ones(1, h, w)
-        freeze_t[:c, y1 - 1 : y2 - 1, x1:x2] = 0.0
+        freeze_t = torch.ones(self.channels, h, w)
+        freeze_t[:c, y1:y2, x1:x2] = 0.0
 
         return sentence_t, seed_t, freeze_t
 
@@ -367,7 +366,8 @@ class LLNCA:
             bin_size=self.config.bin_size,
             trunc_ratio=self.config.trunc_ratio,
         )
-        self.renderer = Renderer(self.config.font_name, self.config.font_size)
+        # self.renderer = Renderer(self.config.font_name, self.config.font_size)
+        self.renderer = TokenRenderer()
 
         self.nca = NCA(channels=self.config.channels)
         self.optimizer = optim.Adam(
@@ -510,13 +510,13 @@ if __name__ == "__main__":
             font_size=8,
             bin_size=16,
             trunc_ratio=3,
-            epochs=24000,
+            epochs=160000,
             batch_size=8,
-            channels=64,
-            swa_start=24000,
+            channels=128,
+            swa_start=160000,
             swa_lr=1e-3,
             backprop_chunk=32,
-            lr=1e-3,
+            lr=1e-4,
             lr_gamma=0.9999,
         )
         llnca = LLNCA(config, None)
