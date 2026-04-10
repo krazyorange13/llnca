@@ -47,10 +47,10 @@ class Visualization:
 
     def viz(self):
         self.generate_frames()
-        # self.save_frames()
-        # if self.ffmpeg:
-        #     self.generate_movie()
-        # self.display_frames()
+        #self.save_frames()
+        #if self.ffmpeg:
+        #    self.generate_movie()
+        #self.display_frames()
         self.display_texts()
 
     def generate_frames(self):
@@ -91,7 +91,7 @@ class Visualization:
         return img
 
     def nca_to_text(self, x: torch.Tensor):
-        y = torch.round(x)
+        y = torch.clamp(torch.round(x), 0.0, 1.0)
         toks = [y[0, :7, 0, i].tolist() for i in range(x.shape[3])]
         ords = [
             int("".join("01"[int(i)] for i in reversed(bits)), base=2) for bits in toks

@@ -67,6 +67,10 @@ class NCA(nn.Module):
             nn.LeakyReLU(),
             nn.Conv2d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
+            nn.Conv2d(256, 256, kernel_size=1),
+            nn.LeakyReLU(),
+            nn.Conv2d(256, 256, kernel_size=1),
+            nn.LeakyReLU(),
             nn.Conv2d(256, self.channels, kernel_size=1, bias=False),
         )
 
@@ -503,21 +507,22 @@ if __name__ == "__main__":
         llnca = LLNCA(config, state)
     else:
         config = LLNCAConfig(
-            name="alpha",
+            name="beta64bezpz",
             folder="models",
             sentences_file="data/norm/ezpzr.txt",
             font_name="/use/share/fonts/opentype/baby.otf",
             font_size=8,
             bin_size=16,
             trunc_ratio=3,
-            epochs=160000,
-            batch_size=8,
-            channels=128,
-            swa_start=160000,
+            epochs=30000,
+            batch_size=64,
+            channels=256,
+            swa_start=1000000,
             swa_lr=1e-3,
             backprop_chunk=32,
             lr=1e-4,
             lr_gamma=0.9999,
+            # betas=(0.5, 0.5),
         )
         llnca = LLNCA(config, None)
 
