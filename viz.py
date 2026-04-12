@@ -18,6 +18,7 @@ class Visualization:
         path: str,
         frame_count: int,
         mod: str | None = None,
+        viz: bool | None = None,
         ffmpeg: bool | None = None,
         channel_range: tuple[int, int] | None = None,
     ):
@@ -29,9 +30,11 @@ class Visualization:
         self.frame_count = frame_count
         self.channel_range = channel_range
 
+        self.prev_text = None
         self.texts = []
 
         self.mod = mod
+        self.viz_ = viz
         self.ffmpeg = ffmpeg
 
         if self.mod:
@@ -47,10 +50,12 @@ class Visualization:
 
     def viz(self):
         self.generate_frames()
-        #self.save_frames()
-        #if self.ffmpeg:
-        #    self.generate_movie()
-        #self.display_frames()
+        if self.viz_ or self.ffmpeg:
+            self.save_frames()
+        if self.ffmpeg:
+            self.generate_movie()
+        if self.viz_:
+            self.display_frames()
         self.display_texts()
 
     def generate_frames(self):
@@ -68,8 +73,15 @@ class Visualization:
             with torch.no_grad():
                 x = self.model.step(x, f)  # type: ignore
                 x = torch.clamp(x, -2.0, 2.0)
-            self.frames.append(self.nca_to_img(x))
-            self.texts.append(self.nca_to_text(x))
+
+            if self.viz_ or self.ffmpeg:
+                self.frames.append(self.nca_to_img(x))
+
+            text = self.nca_to_text(x)
+            if text != self.prev_text:
+                tqdm.write(text)
+            self.prev_text = text
+            self.texts.append(text)
 
     def nca_to_img(self, x: torch.Tensor):
         # if self.channel_range is not None:
@@ -77,8 +89,8 @@ class Visualization:
         # else:
         #    x_ = x[0, :1]
 
-        b, c, h, w = x.shape
-        x_ = x[0, :, :, :]
+        b, c, w = x.shape
+        x_ = x[0, :, :]
         x_ = x.reshape(c, w)
 
         y = torch.clamp(x_, 0.0, 1.0)
@@ -90,16 +102,25 @@ class Visualization:
         img = y.detach().numpy()
         return img
 
+    # def nca_to_text(self, x: torch.Tensor):
+    #     y = torch.clamp(torch.round(x), 0.0, 1.0)
+    #     toks = [y[0, :7, i].tolist() for i in range(x.shape[2])]
+    #     ords = [
+    #         int("".join("01"[int(i)] for i in reversed(bits)), base=2) for bits in toks
+    #     ]
+    #     chrs = [chr(ord_) for ord_ in ords]
+    #     chrs = [(chr_ if chr_.isprintable() else "�") for chr_ in chrs]
+    #     text = "".join(chrs)
+    #     return text
+
     def nca_to_text(self, x: torch.Tensor):
-        y = torch.clamp(torch.round(x), 0.0, 1.0)
-        toks = [y[0, :7, 0, i].tolist() for i in range(x.shape[3])]
-        ords = [
-            int("".join("01"[int(i)] for i in reversed(bits)), base=2) for bits in toks
+        n_chrs = x.shape[2]
+        n_dims = self.llnca.renderer.embeddings.shape[1]
+        chars = [
+            self.llnca.renderer.embedding_to_char(x[0, :n_dims, i])
+            for i in range(n_chrs)
         ]
-        chrs = [chr(ord_) for ord_ in ords]
-        chrs = [(chr_ if chr_.isprintable() else "�") for chr_ in chrs]
-        text = "".join(chrs)
-        return text
+        return "".join(chars)
 
     def save_frames(self):
         # print("saving animation...")
@@ -167,9 +188,9 @@ class Visualization:
             prev_text = text
         print("lines:", len(texts_dedup))
         print("iterations:", j)
-        print()
-        for text in texts_dedup:
-            print(text)
+        # print()
+        # for text in texts_dedup:
+        #     print(text)
 
 
 if __name__ == "__main__":
@@ -183,6 +204,10 @@ if __name__ == "__main__":
     if ffmpeg:
         args.remove("-ffmpeg")
 
+    viz = "-viz" in args
+    if viz:
+        args.remove("-viz")
+
     channel_range = None
     for arg in args:
         if ":" in arg:
@@ -194,5 +219,7 @@ if __name__ == "__main__":
     path = args[1]
     mod = args[2] if 2 < len(args) else None
 
-    viz = Visualization(path, 1000, mod=mod, ffmpeg=ffmpeg, channel_range=channel_range)
+    viz = Visualization(
+        path, 1000, mod=mod, viz=viz, ffmpeg=ffmpeg, channel_range=channel_range
+    )
     viz.viz()

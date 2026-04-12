@@ -22,8 +22,8 @@ class PerceptionFilter(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
         self.in_channels = in_channels
-        self.out_channels = in_channels * 4
-        self.conv = nn.Conv2d(
+        self.out_channels = in_channels * 3
+        self.conv = nn.Conv1d(
             self.in_channels,
             self.out_channels,
             kernel_size=3,
@@ -35,13 +35,12 @@ class PerceptionFilter(nn.Module):
         self.reset_params()
 
     def reset_params(self):
-        identity = torch.tensor([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]])
-        sobel_x = torch.tensor([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]])
-        sobel_y = sobel_x.T
-        laplacian = torch.tensor([[1.0, 1.0, 1.0], [1.0, -8.0, 1.0], [1.0, 1.0, 1.0]])
-        kernel = torch.stack([identity, sobel_x, sobel_y, laplacian])[:, None, :, :]
+        identity = torch.tensor([0.0, 1.0, 0.0])
+        gradient = torch.tensor([-1.0, 0.0, 1.0])
+        laplacian = torch.tensor([1.0, -2.0, 1.0])
+        kernel = torch.stack([identity, gradient, laplacian])[:, None, :]
         with torch.no_grad():
-            self.conv.weight.copy_(kernel.repeat(self.in_channels, 1, 1, 1))
+            self.conv.weight.copy_(kernel.repeat(self.in_channels, 1, 1))
 
     def forward(self, x):
         return self.conv(x)
@@ -56,22 +55,38 @@ class NCA(nn.Module):
         self.perception = PerceptionFilter(self.channels)
         self.perception.conv.weight.requires_grad = False
 
+        # # gamma
+        # self.seq = nn.Sequential(
+        #     nn.Conv1d(self.channels * 3, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, self.channels, kernel_size=1, bias=False),
+        # )
+
+        # gemma/delti
         self.seq = nn.Sequential(
-            nn.Conv2d(self.channels * 4, 256, kernel_size=1),
+            nn.Conv1d(self.channels * 3, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(256, 256, kernel_size=1),
+            nn.Conv1d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(256, 256, kernel_size=1),
+            nn.Conv1d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(256, 256, kernel_size=1),
+            nn.Conv1d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(256, 256, kernel_size=1),
+            nn.Conv1d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
-            nn.Conv2d(256, 256, kernel_size=1),
-            nn.LeakyReLU(),
-            nn.Conv2d(256, 256, kernel_size=1),
-            nn.LeakyReLU(),
-            nn.Conv2d(256, self.channels, kernel_size=1, bias=False),
+            nn.Conv1d(256, self.channels, kernel_size=1, bias=False),
         )
 
         # with torch.no_grad():
@@ -96,17 +111,17 @@ class NCA(nn.Module):
         return x
 
     def get_update_mask(self, shape, update_rate=None):
-        b, _, h, w = shape
+        b, _, w = shape
         update_rate = update_rate or self.update_rate
-        update_mask = (torch.rand(b, 1, h, w) < update_rate).float()
+        update_mask = (torch.rand(b, 1, w) < update_rate).float()
         return update_mask
 
     def get_alive_mask(self, x, threshold=0.01):
         # x = F.pad(x, (1, 1, 1, 1), mode="circular")
         # sum across all channels, if the cells have any values then they're good idrk
-        alpha = x[:, :7, :, :]
+        alpha = x[:, :7, :]
         pool = (
-            F.max_pool2d(alpha, kernel_size=3, stride=1, padding=1)
+            F.max_pool1d(alpha, kernel_size=3, stride=1, padding=1)
             .abs()
             .sum(dim=1)
             .unsqueeze(1)
@@ -120,40 +135,6 @@ class NCA(nn.Module):
         return x
 
 
-class Renderer:
-    def __init__(self, font_name, font_size):
-        self.font_name = font_name
-        self.font_size = font_size
-        self.font = ImageFont.truetype(self.font_name, self.font_size)
-
-    def text(self, text, match=None):
-        if match is None:
-            match = text
-
-        # farm = "p'" * len(match)
-        # farm = farm[: len(match)]
-        # farm = "p'" + ("w" * (len(match) - 1))
-        # farm = "w" * len(match)
-
-        # bbox (left, top, right, bottom)
-        bbox = self.font.getbbox(match)
-        width = bbox[2] - bbox[0]
-        # height = 9  # max height of our baby.otf font
-        height = bbox[3] - bbox[1]
-        width, height = int(width), int(height)
-
-        img = Image.new("L", (width, height), color=(0))
-        draw = ImageDraw.Draw(img)
-
-        # -bbox[0], -bbox[1] offsets any font internal padding
-        draw.text((-bbox[0], -bbox[1]), text, fill=(255), font=self.font)
-
-        return np.asarray(img) / 255.0
-
-    def bbox(self, text):
-        return self.font.getbbox(text)
-
-
 class TokenRenderer:
     def __init__(self):
         self.num_bits = 7
@@ -165,15 +146,36 @@ class TokenRenderer:
     def text(self, text, match=None):
         pad = max(0, len(match) - len(text) + 1) if match is not None else 0
         ords = [ord(char) for char in text]
-        bins = [
-            self.bin_encode(ord_).T.astype(np.float32)[np.newaxis, :] for ord_ in ords
-        ]
-        bins.extend([np.zeros(shape=(1, self.num_bits), dtype=np.float32)] * pad)
+        bins = [self.bin_encode(ord_).T.astype(np.float32)[:] for ord_ in ords]
+        bins.extend([np.zeros(shape=(self.num_bits), dtype=np.float32)] * pad)
         tnsr = np.stack(bins, axis=1)
         return tnsr
 
     def bbox(self, text):
-        return (0, 0, len(text), 1)
+        return (0, len(text))
+
+
+class EmbeddingRenderer:
+    def __init__(self, embeddings_file):
+        self.embeddings = torch.load(embeddings_file)
+
+    def char_to_embedding(self, char):
+        return self.embeddings[ord(char) - 32]
+
+    def embedding_to_char(self, embedding):
+        distances = torch.sum((embedding - self.embeddings) ** 2, dim=1)
+        nearest = int(torch.argmin(distances).item())
+        return chr(nearest + 32)
+
+    def text(self, text, match=None):
+        pad = max(0, len(match) - len(text) + 1) if match is not None else 0
+        bins = [self.char_to_embedding(char) for char in text]
+        bins.extend([torch.zeros(self.embeddings.shape[1], dtype=torch.float32)] * pad)
+        tnsr = torch.stack(bins, dim=1)
+        return tnsr
+
+    def bbox(self, text):
+        return (0, len(text))
 
 
 class SentenceDataset:
@@ -216,7 +218,7 @@ class Pool:
         self,
         dataset: SentenceDataset,
         bin: int,
-        renderer: Renderer | TokenRenderer,
+        renderer: EmbeddingRenderer,
         channels: int,
         pool_size=64,
     ):
@@ -248,10 +250,10 @@ class Pool:
         # img = torch.cat([img_x, img_y, img_f], dim=3)
 
         losses = F.mse_loss(
-            self.x_batch[:, : self.y_batch.shape[1], :, :],
+            self.x_batch[:, : self.y_batch.shape[1], :],
             self.y_batch,
             reduction="none",
-        ).sum(dim=(1, 2, 3))
+        ).sum(dim=(1, 2))
         sorted_idxs = torch.argsort(losses)
 
         # tqdm.write(str(losses))
@@ -276,16 +278,16 @@ class Pool:
         sentence_img = self.renderer.text(sentence, match=farm)
         seed_img = self.renderer.text(seed, match=farm)
         # (H, W, C) -> (C, H, W)
-        sentence_t = torch.tensor(sentence_img, dtype=torch.float32).permute(2, 0, 1)
-        seed_t = torch.tensor(seed_img, dtype=torch.float32).permute(2, 0, 1)
-        c, h, w = seed_t.shape
-        seed_hid = torch.zeros((self.channels - c, h, w))
+        sentence_t = sentence_img.to(torch.float32)
+        seed_t = seed_img.to(torch.float32)
+        c, w = seed_t.shape
+        seed_hid = torch.zeros((self.channels - c, w))
         seed_t = torch.cat([seed_t, seed_hid])
 
         freeze_bbox = self.renderer.bbox(seed)
-        x1, y1, x2, y2 = freeze_bbox
-        freeze_t = torch.ones(self.channels, h, w)
-        freeze_t[:c, y1:y2, x1:x2] = 0.0
+        x1, x2 = freeze_bbox
+        freeze_t = torch.ones(self.channels, w)
+        freeze_t[:c, x1:x2] = 0.0
 
         return sentence_t, seed_t, freeze_t
 
@@ -301,7 +303,7 @@ class Pool:
         return x_batch * mask.float()
 
     def update(self, samples):
-        loss = F.mse_loss(samples[:, : self.y_batch.shape[1], :, :], self.ys[self.idxs])
+        loss = F.mse_loss(samples[:, : self.y_batch.shape[1], :], self.ys[self.idxs])
 
         samples = samples.detach()
         # replaces samples in batch returned by sample()
@@ -345,8 +347,7 @@ class LLNCAConfig:
     name: str
     folder: str
     sentences_file: str
-    font_name: str
-    font_size: int
+    embeddings_file: str
     bin_size: int
     trunc_ratio: int
     epochs: int
@@ -370,8 +371,8 @@ class LLNCA:
             bin_size=self.config.bin_size,
             trunc_ratio=self.config.trunc_ratio,
         )
-        # self.renderer = Renderer(self.config.font_name, self.config.font_size)
-        self.renderer = TokenRenderer()
+
+        self.renderer = EmbeddingRenderer(self.config.embeddings_file)
 
         self.nca = NCA(channels=self.config.channels)
         self.optimizer = optim.Adam(
@@ -434,7 +435,7 @@ class LLNCA:
                 self.optimizer.zero_grad()
                 x, freeze_mask = self.poolpool.sample(self.config.batch_size)
 
-                total_steps = random.randint(x.shape[3], int(x.shape[3] * 1.25))
+                total_steps = random.randint(x.shape[2], int(x.shape[2] * 1.25))
                 for step_idx in range(0, total_steps, self.config.backprop_chunk):
                     chunk_steps = min(
                         self.config.backprop_chunk, total_steps - step_idx
@@ -473,6 +474,8 @@ class LLNCA:
 
         save_path = self.save()
         print(f"model saved: {save_path}")
+        if self.min_model:
+            print(f"best model: {self.min_model}")
 
     def save(self, mod=""):
         if mod:
@@ -507,15 +510,14 @@ if __name__ == "__main__":
         llnca = LLNCA(config, state)
     else:
         config = LLNCAConfig(
-            name="beta64bezpz",
+            name="delta",
             folder="models",
             sentences_file="data/norm/ezpzr.txt",
-            font_name="/use/share/fonts/opentype/baby.otf",
-            font_size=8,
+            embeddings_file="embeddings/embed-beta.pth",
             bin_size=16,
             trunc_ratio=3,
-            epochs=30000,
-            batch_size=64,
+            epochs=32000,
+            batch_size=8,
             channels=256,
             swa_start=1000000,
             swa_lr=1e-3,
