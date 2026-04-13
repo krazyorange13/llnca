@@ -36,9 +36,22 @@ class PerceptionFilter(nn.Module):
 
     def reset_params(self):
         identity = torch.tensor([0.0, 1.0, 0.0])
+
+        # delta, zetal, eta
         gradient = torch.tensor([-1.0, 0.0, 1.0])
         laplacian = torch.tensor([1.0, -2.0, 1.0])
         kernel = torch.stack([identity, gradient, laplacian])[:, None, :]
+
+        # epsilon
+        # left = torch.tensor([1.0, 0.0, 0.0])
+        # right = torch.tensor([0.0, 0.0, 1.0])
+        # kernel = torch.stack([identity, left, right])[:, None, :]
+
+        # epstilon, zeta
+        # left = torch.tensor([1.0, 0.0, 0.0])
+        # grad = torch.tensor([1.0, -1.0, 0.0])
+        # kernel = torch.stack([identity, grad, left])[:, None, :]
+
         with torch.no_grad():
             self.conv.weight.copy_(kernel.repeat(self.in_channels, 1, 1))
 
@@ -52,10 +65,12 @@ class NCA(nn.Module):
         self.channels = channels
         self.update_rate = update_rate
 
+        # self.embeddings = nn.Parameter(torch.rand(95, 15) * 4.0 - 2.0)
+
         self.perception = PerceptionFilter(self.channels)
         self.perception.conv.weight.requires_grad = False
 
-        # # gamma
+        # # zeta
         # self.seq = nn.Sequential(
         #     nn.Conv1d(self.channels * 3, 512, kernel_size=1),
         #     nn.LeakyReLU(),
@@ -74,7 +89,26 @@ class NCA(nn.Module):
         #     nn.Conv1d(512, self.channels, kernel_size=1, bias=False),
         # )
 
-        # gemma/delti
+        # # theta/iota
+        # self.seq = nn.Sequential(
+        #     nn.Conv1d(self.channels * 3, 256, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(256, 256, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(256, 256, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(256, 256, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(256, 256, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     # nn.Conv1d(256, 256, kernel_size=1),
+        #     # nn.LeakyReLU(),
+        #     # nn.Conv1d(256, 256, kernel_size=1),
+        #     # nn.LeakyReLU(),
+        #     nn.Conv1d(256, self.channels, kernel_size=1, bias=False),
+        # )
+
+        # kappa
         self.seq = nn.Sequential(
             nn.Conv1d(self.channels * 3, 256, kernel_size=1),
             nn.LeakyReLU(),
@@ -86,8 +120,42 @@ class NCA(nn.Module):
             nn.LeakyReLU(),
             nn.Conv1d(256, 256, kernel_size=1),
             nn.LeakyReLU(),
+            # nn.Conv1d(256, 256, kernel_size=1),
+            # nn.LeakyReLU(),
+            # nn.Conv1d(256, 256, kernel_size=1),
+            # nn.LeakyReLU(),
             nn.Conv1d(256, self.channels, kernel_size=1, bias=False),
         )
+
+        # # zetal
+        # self.seq = nn.Sequential(
+        #     nn.Conv1d(self.channels * 3, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, 512, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(512, self.channels, kernel_size=1, bias=False),
+        # )
+
+        # # delta/epsilon/epstilon/eta
+        # self.seq = nn.Sequential(
+        #     nn.Conv1d(self.channels * 3, 256, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(256, 256, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(256, 256, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(256, 256, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(256, 256, kernel_size=1),
+        #     nn.LeakyReLU(),
+        #     nn.Conv1d(256, self.channels, kernel_size=1, bias=False),
+        # )
 
         # with torch.no_grad():
         #     self.seq[-1].weight.zero_()  # type: ignore
@@ -119,7 +187,7 @@ class NCA(nn.Module):
     def get_alive_mask(self, x, threshold=0.01):
         # x = F.pad(x, (1, 1, 1, 1), mode="circular")
         # sum across all channels, if the cells have any values then they're good idrk
-        alpha = x[:, :7, :]
+        alpha = x[:, :, :]
         pool = (
             F.max_pool1d(alpha, kernel_size=3, stride=1, padding=1)
             .abs()
@@ -156,8 +224,8 @@ class TokenRenderer:
 
 
 class EmbeddingRenderer:
-    def __init__(self, embeddings_file):
-        self.embeddings = torch.load(embeddings_file)
+    def __init__(self, embeddings):
+        self.embeddings = embeddings
 
     def char_to_embedding(self, char):
         return self.embeddings[ord(char) - 32]
@@ -372,10 +440,8 @@ class LLNCA:
             trunc_ratio=self.config.trunc_ratio,
         )
 
-        self.renderer = EmbeddingRenderer(self.config.embeddings_file)
-
         self.nca = NCA(channels=self.config.channels)
-        self.optimizer = optim.Adam(
+        self.optimizer = optim.AdamW(
             self.nca.parameters(), lr=self.config.lr, betas=self.config.betas
         )
         self.scheduler = optim.lr_scheduler.ExponentialLR(
@@ -384,6 +450,9 @@ class LLNCA:
         self.swa = AveragedModel(self.nca)
         self.swa_start = self.config.swa_start
         self.swa_scheduler = SWALR(self.optimizer, swa_lr=self.config.swa_lr)
+
+        embeddings = torch.load(self.config.embeddings_file)
+        self.renderer = EmbeddingRenderer(embeddings)
 
         self.min_loss = float("inf")
         self.min_model = ""
@@ -430,19 +499,20 @@ class LLNCA:
                 initial=self.loaded_epoch,
                 total=self.config.epochs,
                 leave=False,
+                dynamic_ncols=True,
             ):
                 self.curr_epoch = i
                 self.optimizer.zero_grad()
                 x, freeze_mask = self.poolpool.sample(self.config.batch_size)
 
-                total_steps = random.randint(x.shape[2], int(x.shape[2] * 1.25))
+                total_steps = random.randint(x.shape[2] * 4, int(x.shape[2] * 5))
                 for step_idx in range(0, total_steps, self.config.backprop_chunk):
                     chunk_steps = min(
                         self.config.backprop_chunk, total_steps - step_idx
                     )
                     x = self.nca(x, chunk_steps, freeze_mask)
                     loss = self.loss(x)
-                    loss.backward()
+                    loss.backward()  # (retain_graph=True)
                     x = x.detach()
                     x = torch.clamp(x, -2.0, 2.0)
                     acc_loss += loss.item()
@@ -510,21 +580,23 @@ if __name__ == "__main__":
         llnca = LLNCA(config, state)
     else:
         config = LLNCAConfig(
-            name="delta",
+            name="kappa",
             folder="models",
-            sentences_file="data/norm/ezpzr.txt",
-            embeddings_file="embeddings/embed-beta.pth",
+            sentences_file="data/norm/ezpz.txt",
+            embeddings_file="embeddings/embed-theta.pth",
             bin_size=16,
             trunc_ratio=3,
-            epochs=32000,
+            epochs=80000,
+            # batch_size=32,
             batch_size=8,
-            channels=256,
+            channels=196,
+            backprop_chunk=10000,
+            lr=1e-3,
+            # lr=4e-4,
+            lr_gamma=0.99999,
             swa_start=1000000,
             swa_lr=1e-3,
-            backprop_chunk=32,
-            lr=1e-4,
-            lr_gamma=0.9999,
-            # betas=(0.5, 0.5),
+            betas=(0.95, 0.999),
         )
         llnca = LLNCA(config, None)
 

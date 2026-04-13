@@ -71,22 +71,19 @@ def states_to_chars(states: np.ndarray):
 
 # isascii() and isprintable() ords range from 32 to 126, for 95 total
 N_CHARS = 95
-N_DIMS = 82  # hand optimized lol
+N_DIMS = 32  # 82  # hand optimized lol
 RANGE = 4.0
 # K = np.sqrt(N_DIMS * (RANGE**2)) / 7
-K = 5
-SPACE_IDX = ord(" ")
+K = 4
+SPACE_IDX = ord(" ") - 32
 
 print("loading states...")
-states = file_to_states("data/norm/british.txt")
+states = file_to_states("data/norm/ezpz.txt")
 
 print("computing transition matrix...")
 p_transition = get_p_transition(states, n_states=N_CHARS)
-# print(p_transition)
 
-# print("generating sequence...")
-# generated = markov_sequence(None, p_transition, 1000)
-# print(states_to_chars(generated))
+p_mask = torch.from_numpy(np.sum(p_transition, axis=1))
 
 embeddings = torch.rand(N_CHARS, N_DIMS, dtype=torch.float32) * RANGE - RANGE / 2
 embeddings[0] = 0.0
@@ -106,7 +103,10 @@ for i in range(24000):
     distances = torch.cdist(embeddings, embeddings, p=2)
 
     space_loss = torch.pow(embeddings[0], 2).mean() / 1000
-    loss = F.mse_loss(distances, expected_distances) + space_loss
+    mse_loss = (
+        F.mse_loss(distances, expected_distances, reduction="none") * p_mask
+    ).mean()
+    loss = mse_loss + space_loss
     loss.backward()
     optimizer.step()
 
@@ -114,7 +114,7 @@ for i in range(24000):
         print(f"epoch: {i + 1} loss: {loss.item()}")
 
 embeddings.detach_()
-
+# torch.set_printoptions(threshold=torch.inf, sci_mode=False)
 print(embeddings)
 print("std\t", embeddings.std().item())
 print("min\t", embeddings.min().item())
@@ -123,10 +123,12 @@ print("mean\t", embeddings.mean().item())
 
 embeddings.clamp_(-2.0, 2.0)
 distances = torch.cdist(embeddings, embeddings, p=2)
-loss = F.mse_loss(distances, expected_distances)
+space_loss = torch.pow(embeddings[0], 2).mean() / 1000
+mse_loss = (F.mse_loss(distances, expected_distances, reduction="none") * p_mask).mean()
+loss = mse_loss + space_loss
 
 print("clipped loss:", loss.item())
 
-save_path = "embeddings/embed-beta.pth"
+save_path = "embeddings/embed-theta.pth"
 torch.save(embeddings, save_path)
 print("saved to:", save_path)

@@ -69,7 +69,9 @@ class Visualization:
         y, x, f = pool.get_row()
         x = x.unsqueeze(0)
         f = f.unsqueeze(0)
-        for i in tqdm(range(self.frame_count), leave=False, desc="rendering"):
+        for i in tqdm(
+            range(self.frame_count), leave=False, desc="rendering", dynamic_ncols=True
+        ):
             with torch.no_grad():
                 x = self.model.step(x, f)  # type: ignore
                 x = torch.clamp(x, -2.0, 2.0)
@@ -93,8 +95,8 @@ class Visualization:
         x_ = x[0, :, :]
         x_ = x.reshape(c, w)
 
-        y = torch.clamp(x_, 0.0, 1.0)
-        y = 1 - y
+        y = torch.clamp(x_, -1.0, 1.0) / 2 + 0.5
+        # y = 1 - y
         # rgb = y[:3]
         # alpha = y[3:4]
         # bg_color = 255.0
@@ -124,7 +126,9 @@ class Visualization:
 
     def save_frames(self):
         # print("saving animation...")
-        for i in tqdm(range(len(self.frames)), leave=False, desc="saving"):
+        for i in tqdm(
+            range(len(self.frames)), leave=False, desc="saving", dynamic_ncols=True
+        ):
             frame = self.frames[i]
             j = str(i).zfill(len(str(len(self.frames) - 1)))
             cv2.imwrite(
@@ -169,7 +173,7 @@ class Visualization:
         window = self.name
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         while not quit:
-            for i in tqdm(range(len(self.frames)), leave=False):
+            for i in tqdm(range(len(self.frames)), leave=False, dynamic_ncols=True):
                 frame = self.frames[i]
                 cv2.imshow(window, frame)
                 if cv2.waitKey(int(1000 / 60)) & 0xFF == ord("q"):
