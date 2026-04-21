@@ -57,31 +57,78 @@ def chars_to_states(chars: str):
     return arr[mask].astype(np.int32) - 32
 
 
-def file_to_states(filepath):
-    with open(filepath, "rb") as f:
+def file_to_states(path):
+    with open(path, "rb") as f:
         b = f.read()
     non_printable = bytes(range(0, 32)) + bytes([127, *range(128, 256)])
     filtered = b.translate(None, non_printable)
     return np.frombuffer(filtered, dtype=np.uint8).astype(np.int32) - 32
 
 
+def get_translation_tables(text):
+    text_ = "".join(chr_ for chr_ in text if chr_.isascii() and chr_.isprintable())
+    unq_chr_set = set(text_)
+    unq_chr_lst = sorted(list(unq_chr_set), key=lambda x: ord(x))
+    translation = {c: i for i, c in enumerate(unq_chr_lst)}
+    translation_table_lst = []
+    for i in range(256):
+        chr_ = chr(i)
+        if not (chr_.isascii() and chr_.isprintable() and chr_ in unq_chr_set):
+            translation_table_lst.append(b"\x00")
+            continue
+        chr_idx = unq_chr_lst.index(chr_)
+        translation_table_lst.append(chr_idx.to_bytes())
+    translation_table = b"".join(translation_table_lst)
+    delete_table_lst = []
+    for i in range(256):
+        chr_ = chr(i)
+        if not (chr_.isascii() and chr_.isprintable() and chr_ in unq_chr_set):
+            delete_table_lst.append(i.to_bytes())
+    delete_table = b"".join(delete_table_lst)
+    return translation, translation_table, delete_table, len(unq_chr_lst)
+
+
+def translation_table_nice(table: bytes):
+    nice = {}
+    for i in range(256):
+        b = table[i]
+        if i != b"\x00":
+            pass
+        nice[chr(b)] = i
+    return nice
+
+
+def file_to_optimized_states(path):
+    with open(path, "rb") as f:
+        text = f.read()
+    translation, translation_table, delete_table, n_unq_chrs = get_translation_tables(
+        text.decode()
+    )
+    translated = text.translate(translation_table, delete_table)
+    return (
+        np.frombuffer(translated, dtype=np.uint8).astype(np.int32),
+        translation,
+        n_unq_chrs,
+    )
+
+
 def states_to_chars(states: np.ndarray):
     return "".join(chr(state + 32) for state in states)
 
 
-# isascii() and isprintable() ords range from 32 to 126, for 95 total
-N_CHARS = 95
-N_DIMS = 32  # 82  # hand optimized lol
-RANGE = 4.0
-# K = np.sqrt(N_DIMS * (RANGE**2)) / 7
-K = 4
-SPACE_IDX = ord(" ") - 32
-
 print("loading states...")
-states = file_to_states("data/norm/ezpz.txt")
+states, translation, N_CHARS = file_to_optimized_states("data/norm/ezpz.txt")
 
 print("computing transition matrix...")
 p_transition = get_p_transition(states, n_states=N_CHARS)
+
+# isascii() and isprintable() ords range from 32 to 126, for 95 total
+# N_CHARS = 95
+N_DIMS = 12  # 82  # hand optimized lol
+RANGE = 4.0
+# K = np.sqrt(N_DIMS * (RANGE**2)) / 7
+K = 4
+SPACE_IDX = ord(" ") - 32  # 0
 
 p_mask = torch.from_numpy(np.sum(p_transition, axis=1))
 
@@ -114,7 +161,7 @@ for i in range(24000):
         print(f"epoch: {i + 1} loss: {loss.item()}")
 
 embeddings.detach_()
-# torch.set_printoptions(threshold=torch.inf, sci_mode=False)
+torch.set_printoptions(profile="default", sci_mode=False, threshold=100)
 print(embeddings)
 print("std\t", embeddings.std().item())
 print("min\t", embeddings.min().item())
@@ -129,6 +176,10 @@ loss = mse_loss + space_loss
 
 print("clipped loss:", loss.item())
 
-save_path = "embeddings/embed-theta.pth"
-torch.save(embeddings, save_path)
+save = {
+    "embeddings": embeddings,
+    "translation": translation,
+}
+save_path = "embeddings/embed-ezpz.pth"
+torch.save(save, save_path)
 print("saved to:", save_path)

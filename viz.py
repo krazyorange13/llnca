@@ -26,11 +26,10 @@ class Visualization:
         state = torch.load(self.path, weights_only=False)
         self.llnca = LLNCA(state["config"], state)
         self.epochs = state["curr_epoch"]
-        self.frames = []
         self.frame_count = frame_count
         self.channel_range = channel_range
 
-        self.prev_text = None
+        self.frames = []
         self.texts = []
 
         self.mod = mod
@@ -49,6 +48,8 @@ class Visualization:
         )
 
     def viz(self):
+        self.frames = []
+        self.texts = []
         self.generate_frames()
         if self.viz_ or self.ffmpeg:
             self.save_frames()
@@ -69,6 +70,7 @@ class Visualization:
         y, x, f = pool.get_row()
         x = x.unsqueeze(0)
         f = f.unsqueeze(0)
+        prev_text = None
         for i in tqdm(
             range(self.frame_count), leave=False, desc="rendering", dynamic_ncols=True
         ):
@@ -80,9 +82,9 @@ class Visualization:
                 self.frames.append(self.nca_to_img(x))
 
             text = self.nca_to_text(x)
-            if text != self.prev_text:
+            if text != prev_text:
                 tqdm.write(text)
-            self.prev_text = text
+            prev_text = text
             self.texts.append(text)
 
     def nca_to_img(self, x: torch.Tensor):
@@ -226,4 +228,8 @@ if __name__ == "__main__":
     viz = Visualization(
         path, 1000, mod=mod, viz=viz, ffmpeg=ffmpeg, channel_range=channel_range
     )
+    viz.viz()
+    viz.viz()
+    viz.viz()
+    viz.viz()
     viz.viz()

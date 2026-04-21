@@ -1,9 +1,9 @@
 import os
 import sys
+import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass
-
 
 import cv2
 import numpy as np
@@ -60,7 +60,7 @@ class PerceptionFilter(nn.Module):
 
 
 class NCA(nn.Module):
-    def __init__(self, channels=16, update_rate=0.25):
+    def __init__(self, channels=16, update_rate=0.5):
         super(NCA, self).__init__()
         self.channels = channels
         self.update_rate = update_rate
@@ -89,7 +89,7 @@ class NCA(nn.Module):
         #     nn.Conv1d(512, self.channels, kernel_size=1, bias=False),
         # )
 
-        # # theta/iota
+        # # theta/iota/kappa
         # self.seq = nn.Sequential(
         #     nn.Conv1d(self.channels * 3, 256, kernel_size=1),
         #     nn.LeakyReLU(),
@@ -108,7 +108,7 @@ class NCA(nn.Module):
         #     nn.Conv1d(256, self.channels, kernel_size=1, bias=False),
         # )
 
-        # kappa
+        # lambda
         self.seq = nn.Sequential(
             nn.Conv1d(self.channels * 3, 256, kernel_size=1),
             nn.LeakyReLU(),
@@ -225,15 +225,18 @@ class TokenRenderer:
 
 class EmbeddingRenderer:
     def __init__(self, embeddings):
-        self.embeddings = embeddings
+        self.embeddings = embeddings["embeddings"]
+        # char to int, int to char
+        self.translation = embeddings["translation"]
+        self.translation_inv = {v: k for k, v in self.translation.items()}
 
     def char_to_embedding(self, char):
-        return self.embeddings[ord(char) - 32]
+        return self.embeddings[self.translation[char]]
 
     def embedding_to_char(self, embedding):
         distances = torch.sum((embedding - self.embeddings) ** 2, dim=1)
         nearest = int(torch.argmin(distances).item())
-        return chr(nearest + 32)
+        return self.translation_inv[nearest]
 
     def text(self, text, match=None):
         pad = max(0, len(match) - len(text) + 1) if match is not None else 0
@@ -261,6 +264,7 @@ class SentenceDataset:
         with open(file) as f:
             # load sentences from a file with one sentence per line
             sentences = f.readlines()
+        sentences = [sentence.strip() for sentence in sentences]
         return sentences
 
     def load_bins(self, sentences):
@@ -456,6 +460,7 @@ class LLNCA:
 
         self.min_loss = float("inf")
         self.min_model = ""
+        self.last_model = ""
         self.curr_epoch = 0
         self.loaded_epoch = 0
 
@@ -532,18 +537,23 @@ class LLNCA:
                     avg_loss = acc_loss / acc_epochs
                     tqdm.write(f"epoch {self.curr_epoch + 1} loss: {avg_loss}")
                     if avg_loss < self.min_loss:
-                        if self.min_model:
+                        if self.min_model and self.min_model != self.last_model:
                             os.remove(self.min_model)
                         self.min_loss = avg_loss
                         self.min_model = self.save()
+                    if not math.isnan(avg_loss):
+                        if self.last_model and self.min_model != self.last_model:
+                            os.remove(self.last_model)
+                        self.last_model = self.save()
                     acc_loss = 0
                     acc_epochs = 0
 
         except KeyboardInterrupt:
             print("training cancelled")
 
-        save_path = self.save()
-        print(f"model saved: {save_path}")
+        # save_path = self.save()
+        # print(f"model saved: {save_path}")
+        print(f"model saved: {self.last_model}")
         if self.min_model:
             print(f"best model: {self.min_model}")
 
@@ -577,20 +587,35 @@ if __name__ == "__main__":
             new_epochs = int(sys.argv[2])
             config.epochs = new_epochs
 
+        state["min_loss"] = float("inf")
+        new_lr = 1e-4
+        state["scheduler"] = {
+            "gamma": 0.999,
+            "base_lrs": [new_lr],
+            "last_epoch": 0,
+            "_step_count": 1,
+            "_is_initial": False,
+            "_get_lr_called_within_step": False,
+            "_last_lr": [new_lr],
+        }
+
+        config.name = "lambdal-b8-ft4"
+
         llnca = LLNCA(config, state)
     else:
         config = LLNCAConfig(
-            name="kappa",
+            name="lambdal-b1",
             folder="models",
-            sentences_file="data/norm/ezpz.txt",
-            embeddings_file="embeddings/embed-theta.pth",
+            sentences_file="data/norm/ezpzr.txt",
+            embeddings_file="embeddings/embed-ezpz.pth",
             bin_size=16,
             trunc_ratio=3,
             epochs=80000,
             # batch_size=32,
-            batch_size=8,
-            channels=196,
-            backprop_chunk=10000,
+            # batch_size=8,
+            batch_size=1,
+            channels=128,
+            backprop_chunk=32,
             lr=1e-3,
             # lr=4e-4,
             lr_gamma=0.99999,
