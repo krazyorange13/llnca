@@ -1,15 +1,6 @@
-__pycache__/
+__pycache__
 *.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
 
-.venv/
+.venv
 
-anim/
-data/
-models*/
-movies*/
-embeddings/
-grid/
+data
