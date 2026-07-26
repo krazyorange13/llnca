@@ -7,13 +7,11 @@ from dataclasses import dataclass
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
 import torch
 from torch import optim
 from torch import nn
 from torch.nn import functional as F
-from torch.optim.swa_utils import AveragedModel, SWALR
 
 from tqdm import tqdm
 
@@ -36,21 +34,9 @@ class PerceptionFilter(nn.Module):
 
     def reset_params(self):
         identity = torch.tensor([0.0, 1.0, 0.0])
-
-        # delta, zetal, eta
         gradient = torch.tensor([-1.0, 0.0, 1.0])
         laplacian = torch.tensor([1.0, -2.0, 1.0])
         kernel = torch.stack([identity, gradient, laplacian])[:, None, :]
-
-        # epsilon
-        # left = torch.tensor([1.0, 0.0, 0.0])
-        # right = torch.tensor([0.0, 0.0, 1.0])
-        # kernel = torch.stack([identity, left, right])[:, None, :]
-
-        # epstilon, zeta
-        # left = torch.tensor([1.0, 0.0, 0.0])
-        # grad = torch.tensor([1.0, -1.0, 0.0])
-        # kernel = torch.stack([identity, grad, left])[:, None, :]
 
         with torch.no_grad():
             self.conv.weight.copy_(kernel.repeat(self.in_channels, 1, 1))
@@ -60,105 +46,23 @@ class PerceptionFilter(nn.Module):
 
 
 class NCA(nn.Module):
-    def __init__(self, channels=16, update_rate=0.5):
+    def __init__(self, width=256, depth=8, channels=16, update_rate=0.5):
         super(NCA, self).__init__()
         self.channels = channels
         self.update_rate = update_rate
 
-        # self.embeddings = nn.Parameter(torch.rand(95, 15) * 4.0 - 2.0)
-
         self.perception = PerceptionFilter(self.channels)
         self.perception.conv.weight.requires_grad = False
 
-        # # zeta
-        # self.seq = nn.Sequential(
-        #     nn.Conv1d(self.channels * 3, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, self.channels, kernel_size=1, bias=False),
-        # )
-
-        # # theta/iota/kappa
-        # self.seq = nn.Sequential(
-        #     nn.Conv1d(self.channels * 3, 256, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(256, 256, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(256, 256, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(256, 256, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(256, 256, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     # nn.Conv1d(256, 256, kernel_size=1),
-        #     # nn.LeakyReLU(),
-        #     # nn.Conv1d(256, 256, kernel_size=1),
-        #     # nn.LeakyReLU(),
-        #     nn.Conv1d(256, self.channels, kernel_size=1, bias=False),
-        # )
-
-        # lambda
-        self.seq = nn.Sequential(
-            nn.Conv1d(self.channels * 3, 256, kernel_size=1),
-            nn.LeakyReLU(),
-            nn.Conv1d(256, 256, kernel_size=1),
-            nn.LeakyReLU(),
-            nn.Conv1d(256, 256, kernel_size=1),
-            nn.LeakyReLU(),
-            nn.Conv1d(256, 256, kernel_size=1),
-            nn.LeakyReLU(),
-            nn.Conv1d(256, 256, kernel_size=1),
-            nn.LeakyReLU(),
-            # nn.Conv1d(256, 256, kernel_size=1),
-            # nn.LeakyReLU(),
-            # nn.Conv1d(256, 256, kernel_size=1),
-            # nn.LeakyReLU(),
-            nn.Conv1d(256, self.channels, kernel_size=1, bias=False),
-        )
-
-        # # zetal
-        # self.seq = nn.Sequential(
-        #     nn.Conv1d(self.channels * 3, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, 512, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(512, self.channels, kernel_size=1, bias=False),
-        # )
-
-        # # delta/epsilon/epstilon/eta
-        # self.seq = nn.Sequential(
-        #     nn.Conv1d(self.channels * 3, 256, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(256, 256, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(256, 256, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(256, 256, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(256, 256, kernel_size=1),
-        #     nn.LeakyReLU(),
-        #     nn.Conv1d(256, self.channels, kernel_size=1, bias=False),
-        # )
-
-        # with torch.no_grad():
-        #     self.seq[-1].weight.zero_()  # type: ignore
+        self.width = width
+        self.depth = depth
+        activator = nn.LeakyReLU
+        layers: list[nn.Module] = [nn.Conv1d(self.channels * 3, self.width, kernel_size=1), activator()]
+        for i in range(self.depth - 2):
+            layers.append(nn.Conv1d(self.width, self.width, kernel_size=1))
+            layers.append(activator())
+        layers.append(nn.Conv1d(self.width, self.channels, kernel_size=1, bias=False))
+        self.seq = nn.Sequential(*layers)
 
     def step(self, x, freeze_mask=None, update_rate=None):
         pre_alive_mask = self.get_alive_mask(x)
@@ -188,12 +92,7 @@ class NCA(nn.Module):
         # x = F.pad(x, (1, 1, 1, 1), mode="circular")
         # sum across all channels, if the cells have any values then they're good idrk
         alpha = x[:, :, :]
-        pool = (
-            F.max_pool1d(alpha, kernel_size=3, stride=1, padding=1)
-            .abs()
-            .sum(dim=1)
-            .unsqueeze(1)
-        )
+        pool = F.max_pool1d(alpha, kernel_size=3, stride=1, padding=1).abs().sum(dim=1).unsqueeze(1)
         mask = pool > threshold
         return mask.float()
 
@@ -365,9 +264,7 @@ class Pool:
 
     def damage(self, x_batch, f_batch):
         b, c, h, w = x_batch.shape
-        grid = torch.meshgrid(
-            torch.linspace(-1, 1, h), torch.linspace(-1, 1, w), indexing="ij"
-        )
+        grid = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w), indexing="ij")
         grid = torch.stack(grid, dim=0).unsqueeze(0).repeat(b, 1, 1, 1)
         center = torch.rand(b, 2, 1, 1) - 0.5
         radius = 0.3 * torch.rand(b, 1, 1, 1) + 0.1
@@ -420,13 +317,16 @@ class LLNCAConfig:
     folder: str
     sentences_file: str
     embeddings_file: str
+
     bin_size: int
     trunc_ratio: int
+
+    nca_width: int
+    nca_depth: int
+
     epochs: int
     batch_size: int
     channels: int
-    swa_start: int
-    swa_lr: float
     backprop_chunk: int = 32
     lr: float = 2e-3
     lr_gamma: float = 0.9999
@@ -444,16 +344,9 @@ class LLNCA:
             trunc_ratio=self.config.trunc_ratio,
         )
 
-        self.nca = NCA(channels=self.config.channels)
-        self.optimizer = optim.AdamW(
-            self.nca.parameters(), lr=self.config.lr, betas=self.config.betas
-        )
-        self.scheduler = optim.lr_scheduler.ExponentialLR(
-            self.optimizer, self.config.lr_gamma
-        )
-        self.swa = AveragedModel(self.nca)
-        self.swa_start = self.config.swa_start
-        self.swa_scheduler = SWALR(self.optimizer, swa_lr=self.config.swa_lr)
+        self.nca = NCA(width=self.config.nca_width, depth=self.config.nca_depth, channels=self.config.channels)
+        self.optimizer = optim.AdamW(self.nca.parameters(), lr=self.config.lr, betas=self.config.betas)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, self.config.lr_gamma)
 
         embeddings = torch.load(self.config.embeddings_file)
         self.renderer = EmbeddingRenderer(embeddings)
@@ -481,7 +374,6 @@ class LLNCA:
         # alive_mask = (self.nca.get_alive_mask(x) > 0).expand(-1, 16, -1, -1)
         # alive_x = x[alive_mask]
         # hidden_loss = 0.01 / (torch.std(alive_x) + 1e-4)
-
         # return mse_loss + hidden_loss
 
         return mse_loss
@@ -490,9 +382,7 @@ class LLNCA:
         print(f"model name: {self.config.name}")
         print(f"sentences file: {self.config.sentences_file}")
 
-        pool = Pool(
-            self.dataset, bin=1, renderer=self.renderer, channels=self.config.channels
-        )
+        pool = Pool(self.dataset, bin=1, renderer=self.renderer, channels=self.config.channels)
         self.poolpool = PoolPool([pool])
 
         acc_loss = 0
@@ -511,10 +401,9 @@ class LLNCA:
                 x, freeze_mask = self.poolpool.sample(self.config.batch_size)
 
                 total_steps = random.randint(x.shape[2] * 4, int(x.shape[2] * 5))
+                # tqdm.write(f"{x.shape[2] * 4} / {x.shape[2] * 5} m= {total_steps}")
                 for step_idx in range(0, total_steps, self.config.backprop_chunk):
-                    chunk_steps = min(
-                        self.config.backprop_chunk, total_steps - step_idx
-                    )
+                    chunk_steps = min(self.config.backprop_chunk, total_steps - step_idx)
                     x = self.nca(x, chunk_steps, freeze_mask)
                     loss = self.loss(x)
                     loss.backward()  # (retain_graph=True)
@@ -525,11 +414,7 @@ class LLNCA:
                 torch.nn.utils.clip_grad_norm_(self.nca.parameters(), max_norm=1.0)
                 self.optimizer.step()
 
-                if self.curr_epoch >= self.swa_start:
-                    self.swa.update_parameters(self.nca)
-                    self.swa_scheduler.step()
-                else:
-                    self.scheduler.step()
+                self.scheduler.step()
 
                 acc_epochs += 1
 
@@ -551,8 +436,6 @@ class LLNCA:
         except KeyboardInterrupt:
             print("training cancelled")
 
-        # save_path = self.save()
-        # print(f"model saved: {save_path}")
         print(f"model saved: {self.last_model}")
         if self.min_model:
             print(f"best model: {self.min_model}")
@@ -566,14 +449,9 @@ class LLNCA:
             "nca": self.nca.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "scheduler": self.scheduler.state_dict(),
-            "swa": self.swa.state_dict(),
-            "swa_start": self.swa_start,
-            "swa_scheduler": self.swa_scheduler.state_dict(),
             "min_loss": self.min_loss,
         }
-        save_path = (
-            f"{self.config.folder}/{self.config.name}{mod}-{self.curr_epoch + 1}.tar"
-        )
+        save_path = f"{self.config.folder}/{self.config.name}{mod}-{self.curr_epoch + 1}.tar"
         torch.save(state, save_path)
         return save_path
 
@@ -587,40 +465,23 @@ if __name__ == "__main__":
             new_epochs = int(sys.argv[2])
             config.epochs = new_epochs
 
-        state["min_loss"] = float("inf")
-        new_lr = 1e-4
-        state["scheduler"] = {
-            "gamma": 0.999,
-            "base_lrs": [new_lr],
-            "last_epoch": 0,
-            "_step_count": 1,
-            "_is_initial": False,
-            "_get_lr_called_within_step": False,
-            "_last_lr": [new_lr],
-        }
-
-        config.name = "lambdal-b8-ft4"
-
         llnca = LLNCA(config, state)
     else:
         config = LLNCAConfig(
-            name="lambdal-b1",
+            name="dih",
             folder="models",
             sentences_file="data/norm/ezpzr.txt",
             embeddings_file="embeddings/embed-ezpz.pth",
             bin_size=16,
             trunc_ratio=3,
+            nca_width=256,
+            nca_depth=8,
             epochs=80000,
-            # batch_size=32,
-            # batch_size=8,
-            batch_size=1,
+            batch_size=8,
             channels=128,
             backprop_chunk=32,
             lr=1e-3,
-            # lr=4e-4,
-            lr_gamma=0.99999,
-            swa_start=1000000,
-            swa_lr=1e-3,
+            lr_gamma=0.9999,
             betas=(0.95, 0.999),
         )
         llnca = LLNCA(config, None)

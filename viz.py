@@ -41,11 +41,7 @@ class Visualization:
         else:
             self.name = self.llnca.config.name
 
-        self.model = (
-            self.llnca.nca
-            if state["curr_epoch"] < state["swa_start"]
-            else self.llnca.swa.module
-        )
+        self.model = self.llnca.nca
 
     def viz(self):
         self.frames = []
@@ -71,9 +67,7 @@ class Visualization:
         x = x.unsqueeze(0)
         f = f.unsqueeze(0)
         prev_text = None
-        for i in tqdm(
-            range(self.frame_count), leave=False, desc="rendering", dynamic_ncols=True
-        ):
+        for i in tqdm(range(self.frame_count), leave=False, desc="rendering", dynamic_ncols=True):
             with torch.no_grad():
                 x = self.model.step(x, f)  # type: ignore
                 x = torch.clamp(x, -2.0, 2.0)
@@ -120,17 +114,12 @@ class Visualization:
     def nca_to_text(self, x: torch.Tensor):
         n_chrs = x.shape[2]
         n_dims = self.llnca.renderer.embeddings.shape[1]
-        chars = [
-            self.llnca.renderer.embedding_to_char(x[0, :n_dims, i])
-            for i in range(n_chrs)
-        ]
+        chars = [self.llnca.renderer.embedding_to_char(x[0, :n_dims, i]) for i in range(n_chrs)]
         return "".join(chars)
 
     def save_frames(self):
         # print("saving animation...")
-        for i in tqdm(
-            range(len(self.frames)), leave=False, desc="saving", dynamic_ncols=True
-        ):
+        for i in tqdm(range(len(self.frames)), leave=False, desc="saving", dynamic_ncols=True):
             frame = self.frames[i]
             j = str(i).zfill(len(str(len(self.frames) - 1)))
             cv2.imwrite(
@@ -225,9 +214,7 @@ if __name__ == "__main__":
     path = args[1]
     mod = args[2] if 2 < len(args) else None
 
-    viz = Visualization(
-        path, 1000, mod=mod, viz=viz, ffmpeg=ffmpeg, channel_range=channel_range
-    )
+    viz = Visualization(path, 1000, mod=mod, viz=viz, ffmpeg=ffmpeg, channel_range=channel_range)
     viz.viz()
     viz.viz()
     viz.viz()
