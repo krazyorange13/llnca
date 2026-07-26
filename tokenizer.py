@@ -1,104 +1,91 @@
+import os
 import time
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
 from itertools import pairwise
-from typing import Literal
+
+from tqdm import tqdm
+
+
+def _count_pairwise(text: str) -> Counter:
+    return Counter(pairwise(text))
 
 
 class Tokenizer:
     def __init__(self):
-        self.vocab: dict[int, str | tuple[int, int]] = {}
+        self.vocab: dict[int, str | tuple[str, str]] = {}
+        self.n_workers = os.cpu_count() or 8
+        self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
 
-    def train(self, text: str, verbosity: Literal[0, 1, 2]):
+    def __del__(self):
+        self.executor.shutdown(wait=False)
+
+    def train(self, text: str):
         prev = time.perf_counter()
-        n_merges = self._train(text, verbosity)
+        n_merges = self._train(text)
         curr = time.perf_counter()
         diff = curr - prev
         print(f"made {n_merges} merges in {diff:.6f} seconds.")
 
-    def _train(self, text: str, verbosity: Literal[0, 1, 2]):
+    def _train(self, text: str):
         chars_unique = set(text)
         self.vocab = {}
         for char in chars_unique:
             tok = next(iter(char.encode("utf-8")))
             self.vocab[tok] = char
 
-        toks = list(text.encode("utf-8"))
+        toks_str = text.encode("utf-8").decode("latin-1")
 
         n_merges = 0
         next_tok = 256
-        while len(toks) > 1:
-            if verbosity >= 2:
-                print("|".join([self.expand_tok(tok) for tok in toks]))
+        with tqdm(dynamic_ncols=True, leave=False, unit="merges") as pbar:
+            while len(toks_str) > 1:
+                counts = self.count_pairs(toks_str)
+                if not counts:
+                    break
 
-            counts = self.count_pairs(toks)
-            most_common = counts.most_common(1)[0]
-            most_pair, most_count = most_common
-            if most_count == 1:
-                break
+                most_common = counts.most_common(1)[0]
+                most_pair, most_count = most_common
+                if most_count == 1:
+                    break
 
-            self.vocab[next_tok] = most_pair
-            toks = self.merge_pair(toks, next_tok, most_pair)
+                self.vocab[next_tok] = most_pair
+                c1, c2 = most_pair
+                toks_str = toks_str.replace(c1 + c2, chr(next_tok))
 
-            if verbosity >= 1:
-                print(
-                    f"MERGE: ({self.expand_tok(most_pair[0])!r}, {self.expand_tok(most_pair[1])!r}) {most_pair} -> {next_tok}"
-                )
-
-            next_tok += 1
-            n_merges += 1
+                next_tok += 1
+                n_merges += 1
+                pbar.update()
 
         return n_merges
 
-    def merge_pair(self, toks: list[int], new_tok: int, pair: tuple[int, int]):
-        new_toks: list[int] = []
-        i = 0
-        while i < len(toks):
-            if i != len(toks) - 1 and toks[i] == pair[0] and toks[i + 1] == pair[1]:
-                new_toks.append(new_tok)
-                i += 1
-            else:
-                new_toks.append(toks[i])
-            i += 1
-        return new_toks
+    def count_pairs(self, toks_str: str):
+        n_toks = len(toks_str)
 
-    def count_pairs(self, toks: list[int]):
-        counter: Counter[tuple[int, int]] = Counter()
-        for pair in pairwise(toks):
-            counter[pair] += 1
-        return counter
+        if n_toks < 100_000:
+            return Counter(pairwise(toks_str))
 
-    def expand_tok(self, tok: int):
-        toks: list[int] = [tok]
-        strs: list[str] = []
-        expanded = True
-        while expanded:
-            new_toks: list[int] = []
-            expanded = False
-            for _tok in toks:
-                sub = self.vocab[_tok]
-                if isinstance(sub, tuple):
-                    new_toks.extend(sub)
-                    expanded = True
-                elif isinstance(sub, str):
-                    new_toks.append(_tok)
-            toks = new_toks
-        for _tok in toks:
-            sub = self.vocab[_tok]
-            if isinstance(sub, str):
-                strs.append(sub)
-            elif isinstance(sub, tuple):
-                raise TypeError(
-                    ">w< oopsies not good! token didn't expand to str as expected :("
-                )
-        return "".join(strs)
+        buf_sz = n_toks // self.n_workers
+        bufs = []
+
+        for i in range(self.n_workers):
+            start = i * buf_sz
+            end = start + buf_sz + (1 if i < self.n_workers - 1 else 0)
+            bufs.append(toks_str[start:end])
+
+        counts = Counter()
+        for _counts in self.executor.map(_count_pairwise, bufs):
+            counts.update(_counts)
+
+        return counts
 
 
 if __name__ == "__main__":
     print("loading text...")
     text = """"""
-    with open("data/norm/harvsents.txt", "r") as file:
+    with open("data/norm/sentences.txt", "r") as file:
         text = file.read()
 
     tokenizer = Tokenizer()
     print("training...")
-    tokenizer.train(text, verbosity=0)
+    tokenizer.train(text)
