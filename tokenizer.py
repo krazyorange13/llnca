@@ -79,13 +79,41 @@ class Tokenizer:
 
         return counts
 
+    def expand_tok(self, tok: int):
+        toks: list[int] = [tok]
+        strs: list[str] = []
+        expanded = True
+        while expanded:
+            new_toks: list[int] = []
+            expanded = False
+            for _tok in toks:
+                sub = self.vocab[_tok]
+                if isinstance(sub, tuple):
+                    new_toks.extend([ord(sub_e) for sub_e in sub])
+                    expanded = True
+                elif isinstance(sub, str):
+                    new_toks.append(_tok)
+            toks = new_toks
+        for _tok in toks:
+            sub = self.vocab[_tok]
+            if isinstance(sub, str):
+                strs.append(sub)
+            elif isinstance(sub, tuple):
+                raise TypeError(
+                    ">w< oopsies not good! token didn't expand to str as expected :("
+                )
+        return "".join(strs)
+
 
 if __name__ == "__main__":
     print("loading text...")
     text = """"""
-    with open("data/norm/sentences.txt", "r") as file:
+    with open("data/norm/ezpz.txt", "r") as file:
         text = file.read()
 
     tokenizer = Tokenizer()
     print("training...")
     tokenizer.train(text)
+
+    for _tok in tokenizer.vocab:
+        print(f"{_tok}={tokenizer.expand_tok(_tok)!r}")
