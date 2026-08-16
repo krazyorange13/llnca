@@ -5,6 +5,7 @@ description = "large language neural cellular automata"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "numpy>=2.5.2",
     "torch>=2.13.0",
     "tqdm>=4.69.1",
 ]

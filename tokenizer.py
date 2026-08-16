@@ -11,55 +11,135 @@ def _count_pairwise(text: str) -> Counter:
     return Counter(pairwise(text))
 
 
-class Tokenizer:
+def print_ttlr(text: str, lim: int = 120, dim=True):
+    r_text = repr(text)[1:-1]
+    l_r_text = len(r_text)
+    l_r_r_text = len(r_text.replace("\\n", ""))
+    tqdm.write(
+        ("\033[2m" if dim else "")
+        + f"[{l_r_r_text}] {r_text[:lim]}"
+        + ("..." if l_r_text > lim else "")
+        + ("\033[22m" if dim else "")
+    )
+
+
+class LLNCATokenizer:
     def __init__(self):
         self.vocab: dict[int, str | tuple[str, str]] = {}
+        self.ivocab: dict[str | tuple[str, str], int] = {}
+        self.ivocab_dirty = True
+        self.next_tok = 256
         self.n_workers = os.cpu_count() or 8
         self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
 
-    def __del__(self):
-        self.executor.shutdown(wait=False)
+        for i in range(32, 127):
+            self.vocab[i] = chr(i)
 
-    def train(self, text: str):
+    def load(self, vocab):
+        self.vocab = vocab
+        self.ivocab_dirty = True
+        max_tok = max(self.vocab.keys())
+        self.next_tok = max_tok + 1
+
+    def save(self):
+        return self.vocab
+
+    def train(self, text: str, debug: bool = False):
         prev = time.perf_counter()
-        n_merges = self._train(text)
+        n_merges = self._train(text, debug)
         curr = time.perf_counter()
         diff = curr - prev
-        print(f"made {n_merges} merges in {diff:.6f} seconds.")
+        print(f"\033[2mmade {n_merges} merges in {diff:.6f} seconds.\033[0m")
 
-    def _train(self, text: str):
+    def _train(self, text: str, debug: bool = False):
+        self.ivocab_dirty = True
+
         chars_unique = set(text)
-        self.vocab = {}
         for char in chars_unique:
             tok = next(iter(char.encode("utf-8")))
             self.vocab[tok] = char
 
         toks_str = text.encode("utf-8").decode("latin-1")
+        if debug:
+            print_ttlr(toks_str)
 
         n_merges = 0
-        next_tok = 256
-        with tqdm(dynamic_ncols=True, leave=False, unit="merges") as pbar:
-            while len(toks_str) > 1:
-                counts = self.count_pairs(toks_str)
-                if not counts:
+        # with tqdm(dynamic_ncols=True, leave=False, unit="merges") as pbar:
+        while len(toks_str) > 1:
+            counts = self.count_pairs(toks_str)
+            # tqdm.write(str(counts))
+            if not counts:
+                break
+
+            # most_common = counts.most_common(1)[0]
+            most_common = (("", ""), 0)
+            for pair, count in counts.most_common():
+                if count < most_common[1]:
                     break
+                if "\n" not in pair:  # and " " not in pair:
+                    most_common = (pair, count)
 
-                most_common = counts.most_common(1)[0]
-                most_pair, most_count = most_common
-                if most_count == 1:
-                    break
+            most_pair, most_count = most_common
+            if most_count <= 1:
+                break
 
-                self.vocab[next_tok] = most_pair
-                c1, c2 = most_pair
-                toks_str = toks_str.replace(c1 + c2, chr(next_tok))
+            self.vocab[self.next_tok] = most_pair
+            c1, c2 = most_pair
+            toks_str = toks_str.replace(c1 + c2, chr(self.next_tok))
 
-                next_tok += 1
-                n_merges += 1
-                pbar.update()
+            self.next_tok += 1
+            n_merges += 1
+            if debug:
+                print_ttlr(toks_str)
+            # pbar.update()
 
         return n_merges
 
-    def count_pairs(self, toks_str: str):
+    def encode(self, text: str, debug: bool = False):
+        prev = time.perf_counter()
+        toks_str, n_merges = self._encode(text, debug)
+        curr = time.perf_counter()
+        diff = curr - prev
+        print(f"\033[2mmade {n_merges} merges in {diff:.6f} seconds.\033[0m")
+        return toks_str
+
+    def _encode(self, text: str, debug: bool = False):
+        if self.ivocab_dirty:
+            self._build_ivocab()
+            self.ivocab_dirty = False
+
+        toks_str = text.encode("utf-8").decode("latin-1")
+        if debug:
+            print_ttlr(toks_str)
+
+        n_merges = 0
+        while len(toks_str) > 1:
+            counts = self.count_pairs(toks_str)
+            if not counts:
+                break
+
+            most_tok = 0
+            most_common = (("", ""), 0)
+            for pair, count in counts.most_common():
+                if pair in self.ivocab:
+                    most_tok = self.ivocab[pair]
+                    most_common = (pair, count)
+                    break
+
+            most_pair, most_count = most_common
+            if most_count <= 1:
+                break
+
+            c1, c2 = most_pair
+            toks_str = toks_str.replace(c1 + c2, chr(most_tok))
+            n_merges += 1
+
+            if debug:
+                print_ttlr(toks_str)
+
+        return toks_str, n_merges
+
+    def count_pairs(self, toks_str: str) -> Counter[tuple[str, str]]:
         n_toks = len(toks_str)
 
         if n_toks < 100_000:
@@ -99,21 +179,39 @@ class Tokenizer:
             if isinstance(sub, str):
                 strs.append(sub)
             elif isinstance(sub, tuple):
-                raise TypeError(
-                    ">w< oopsies not good! token didn't expand to str as expected :("
-                )
+                raise TypeError("token didn't expand to str as expected")
         return "".join(strs)
+
+    def _build_ivocab(self):
+        self.ivocab = {v: k for k, v in self.vocab.items()}
+
+    def __len__(self):
+        return len(self.vocab)
+
+    def __del__(self):
+        self.executor.shutdown(wait=False)
 
 
 if __name__ == "__main__":
-    print("loading text...")
-    text = """"""
-    with open("data/norm/ezpz.txt", "r") as file:
-        text = file.read()
+    corp_path = "data/ezpz/ezpz.corp.txt"
+    corptok_path = "data/ezpz/ezpz.corptok.txt"
 
-    tokenizer = Tokenizer()
-    print("training...")
-    tokenizer.train(text)
+    print("loading text...", end=" ")
 
-    for _tok in tokenizer.vocab:
-        print(f"{_tok}={tokenizer.expand_tok(_tok)!r}")
+    corp = """"""
+    with open(corp_path, "r") as file:
+        corp = file.read()
+    print(f"\033[2m{corp_path}\033[0m")
+
+    tokenizer = LLNCATokenizer()
+
+    print("training...", end=" ")
+    tokenizer.train(corp)
+
+    print("encoding...", end=" ")
+    corptok = tokenizer.encode(corp)
+
+    print("writing...", end=" ")
+    with open(corptok_path, "w") as file:
+        file.write(corptok)
+    print(f"\033[2m{corptok_path}\033[0m")
