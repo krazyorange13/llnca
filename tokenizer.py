@@ -192,7 +192,7 @@ class LLNCATokenizer:
         self.executor.shutdown(wait=False)
 
 
-if __name__ == "__main__":
+def main():
     corp_path = "data/ezpz/ezpz.corp.txt"
     corptok_path = "data/ezpz/ezpz.corptok.txt"
 
@@ -215,3 +215,9 @@ if __name__ == "__main__":
     with open(corptok_path, "w") as file:
         file.write(corptok)
     print(f"\033[2m{corptok_path}\033[0m")
+
+    return tokenizer
+
+
+if __name__ == "__main__":
+    main()
