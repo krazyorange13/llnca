@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from collections import Counter
@@ -32,10 +33,10 @@ class LLNCATokenizer:
         self.vocab: LLNCAVocab = vocab if vocab is not None else {}
 
         self.ivocab: LLNCAIVocab = {}
-        self._build_ivocab()
+        self.build_ivocab()
         self.ivocab_dirty = False
 
-        self.next_tok = max(255, max(self.vocab.keys())) + 1
+        self.next_tok = max(255, max(self.vocab.keys())) + 1 if self.vocab else 256
 
         self.n_workers = os.cpu_count() or 8
         self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
@@ -43,17 +44,20 @@ class LLNCATokenizer:
         for i in range(32, 127):
             self.vocab[i] = chr(i)
 
-    def load(self, vocab):
+    def load_vocab(self, vocab):
         self.vocab = vocab
+        self.vocab = {
+            (int(k) if isinstance(k, str) else k): (
+                (v[0], v[1]) if isinstance(v, list) else v
+            )
+            for k, v in self.vocab.items()
+        }
 
-        self._build_ivocab()
+        self.build_ivocab()
         self.ivocab_dirty = False
 
         max_tok = max(self.vocab.keys())
         self.next_tok = max_tok + 1
-
-    def save(self):
-        return self.vocab
 
     def train(self, text: str, debug: bool = False):
         prev = time.perf_counter()
@@ -116,7 +120,7 @@ class LLNCATokenizer:
 
     def _encode(self, text: str, debug: bool = False):
         if self.ivocab_dirty:
-            self._build_ivocab()
+            self.build_ivocab()
             self.ivocab_dirty = False
 
         toks_str = text.encode("utf-8").decode("latin-1")
@@ -193,7 +197,7 @@ class LLNCATokenizer:
                 raise TypeError("token didn't expand to str as expected")
         return "".join(strs)
 
-    def _build_ivocab(self):
+    def build_ivocab(self):
         self.ivocab = {v: k for k, v in self.vocab.items()}
 
     def __len__(self):
@@ -206,6 +210,7 @@ class LLNCATokenizer:
 def main():
     corp_path = "data/ezpz/ezpz.corp.txt"
     corptok_path = "data/ezpz/ezpz.corptok.txt"
+    vocab_path = "data/ezpz/ezpz.vocab.json"
 
     print("loading text...", end=" ")
 
@@ -219,6 +224,13 @@ def main():
     print("training...", end=" ")
     tokenizer.train(corp)
 
+    # print("loading vocab...", end=" ")
+    # with open(vocab_path, "r") as file:
+    #     tokenizer.load_vocab(json.load(file))
+    # print(f"\033[2m{vocab_path}\033[0m")
+
+    # print(tokenizer.vocab)
+
     print("encoding...", end=" ")
     corptok = tokenizer.encode(corp)
 
@@ -226,6 +238,11 @@ def main():
     with open(corptok_path, "w") as file:
         file.write(corptok)
     print(f"\033[2m{corptok_path}\033[0m")
+
+    print("saving...", end=" ")
+    with open(vocab_path, "w") as file:
+        json.dump(tokenizer.vocab, file)
+    print(f"\033[2m{vocab_path}\033[0m")
 
     return tokenizer
 
