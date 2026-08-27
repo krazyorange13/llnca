@@ -23,12 +23,20 @@ def print_ttlr(text: str, lim: int = 120, dim=True):
     )
 
 
+type LLNCAVocab = dict[int, str | tuple[str, str]]
+type LLNCAIVocab = dict[str | tuple[str, str], int]
+
+
 class LLNCATokenizer:
-    def __init__(self):
-        self.vocab: dict[int, str | tuple[str, str]] = {}
-        self.ivocab: dict[str | tuple[str, str], int] = {}
-        self.ivocab_dirty = True
-        self.next_tok = 256
+    def __init__(self, vocab: LLNCAVocab | None = None):
+        self.vocab: LLNCAVocab = vocab if vocab is not None else {}
+
+        self.ivocab: LLNCAIVocab = {}
+        self._build_ivocab()
+        self.ivocab_dirty = False
+
+        self.next_tok = max(255, max(self.vocab.keys())) + 1
+
         self.n_workers = os.cpu_count() or 8
         self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
 
@@ -37,7 +45,10 @@ class LLNCATokenizer:
 
     def load(self, vocab):
         self.vocab = vocab
-        self.ivocab_dirty = True
+
+        self._build_ivocab()
+        self.ivocab_dirty = False
+
         max_tok = max(self.vocab.keys())
         self.next_tok = max_tok + 1
 

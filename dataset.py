@@ -3,15 +3,12 @@ import random
 from collections import defaultdict
 from dataclasses import dataclass
 
-import torch
-from torch import nn
-from torch.utils.data import DataLoader, Dataset, Sampler
+from torch.utils.data import Dataset, Sampler
 
 
 @dataclass
 class LLNCADatasetConfig:
     file: str
-    bin_interval: int = 8
 
 
 class LLNCADataset(Dataset):
