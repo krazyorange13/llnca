@@ -18,7 +18,6 @@ class LLNCADataset(Dataset):
         self.load()
 
     def load(self):
-        print(f"  \033[2min: {corptok_path}\033[0m")
         with open(self.config.file) as file:
             lines = file.readlines()
         lines = [line.strip() for line in lines]
@@ -36,14 +35,16 @@ class LLNCADataset(Dataset):
 
 @dataclass
 class LLNCADataSamplerConfig:
-    batch_l: int
+    batch_len: int
     drop_last: bool
     shuffle: bool = True
     bin_interval: int = 8
 
 
 class LLNCADataSampler(Sampler):
-    def __init__(self, dataset: LLNCADataset, config: LLNCADataSamplerConfig):
+    def __init__(
+        self, dataset: LLNCADataset, config: LLNCADataSamplerConfig, debug: bool = False
+    ):
         self.dataset = dataset
         self.config = config
 
@@ -54,11 +55,12 @@ class LLNCADataSampler(Sampler):
             l = math.ceil(l / b) * b
             self.bins[l].append(i)
 
-        print("\033[2mbins:\033[0m")
-        bin_sz_maxlen = max(len(str(bin_sz)) for bin_sz in self.bins)
-        for bin_sz, bin_l in sorted(self.bins.items()):
-            bin_sz_str = str(bin_sz).rjust(bin_sz_maxlen)
-            print(f"  \033[2m{bin_sz_str}: {'.' * len(bin_l)}\033[0m")
+        if debug:
+            print("\033[2mbins:\033[0m")
+            bin_sz_maxlen = max(len(str(bin_sz)) for bin_sz in self.bins)
+            for bin_sz, bin_l in sorted(self.bins.items()):
+                bin_sz_str = str(bin_sz).rjust(bin_sz_maxlen)
+                print(f"  \033[2m{bin_sz_str}: {'.' * len(bin_l)}\033[0m")
 
     def __iter__(self):
         batches = []
@@ -67,9 +69,9 @@ class LLNCADataSampler(Sampler):
             if self.config.shuffle:
                 random.shuffle(idxs)
 
-            for i in range(0, len(idxs), self.config.batch_l):
-                batch = idxs[i : i + self.config.batch_l]
-                if self.config.drop_last and len(batch) < self.config.batch_l:
+            for i in range(0, len(idxs), self.config.batch_len):
+                batch = idxs[i : i + self.config.batch_len]
+                if self.config.drop_last and len(batch) < self.config.batch_len:
                     continue
                 batches.append(batch)
 
@@ -82,8 +84,8 @@ class LLNCADataSampler(Sampler):
     def __len__(self):
         tn_batches = 0
         for idxs in self.bins.values():
-            n_batches = len(idxs) // self.config.batch_l
-            if not self.config.drop_last and len(idxs) % self.config.batch_l != 0:
+            n_batches = len(idxs) // self.config.batch_len
+            if not self.config.drop_last and len(idxs) % self.config.batch_len != 0:
                 n_batches += 1
             tn_batches += n_batches
         return tn_batches
@@ -91,9 +93,9 @@ class LLNCADataSampler(Sampler):
 
 if __name__ == "__main__":
     corptok_path = "data/ezpz/ezpz.corptok.txt"
-    print("loading dataset...")
+    print(f"loading dataset... \033[2m{corptok_path}\033[0m")
     dataset_config = LLNCADatasetConfig(file=corptok_path)
     dataset = LLNCADataset(dataset_config)
     print("loading sampler...")
-    sampler_config = LLNCADataSamplerConfig(batch_l=8, drop_last=False, shuffle=True)
-    sampler = LLNCADataSampler(dataset, sampler_config)
+    sampler_config = LLNCADataSamplerConfig(batch_len=8, drop_last=False, shuffle=True)
+    sampler = LLNCADataSampler(dataset, sampler_config, debug=True)
