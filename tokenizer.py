@@ -73,6 +73,7 @@ class LLNCATokenizer:
         for char in chars_unique:
             tok = next(iter(char.encode("utf-8")))
             self.vocab[tok] = char
+        self.vocab[0] = "\x00"
 
         toks_str = text.encode("utf-8").decode("latin-1")
         if debug:

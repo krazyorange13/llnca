@@ -1,8 +1,11 @@
 import json
+import math
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 from torch import optim
+import torch.nn.functional as F
 from tqdm import tqdm
 
 from corpus import LLNCACorpus, LLNCACorpusConfig
@@ -53,7 +56,6 @@ class LLNCAConfig:
     # gen_optim: LLNCAOptimConfig
     # adv_optim: LLNCAOptimConfig
     n_epochs: int
-    batch_size: int
     lambda_pxl: float
     lambda_gan: float
 
@@ -78,28 +80,38 @@ class LLNCA:
         )  # type: ignore
 
         print("loading...", end=" ")
+
         self.corpus = LLNCACorpus(config=self.config.corpus)
         print("\033[2mcorpus\033[0m ", end=" ")
+
         self.tokenizer = LLNCATokenizer(vocab=self.config.vocab)
         print("\033[2mtokenizer\033[0m ", end=" ")
+
         self.embeddings = LLNCAEmbedding(self.tokenizer, config=self.config.embedding)
         print("\033[2membeddings\033[0m ", end=" ")
+
         self.dataset = LLNCADataset(config=self.config.dataset)
         print("\033[2mdataset\033[0m ", end=" ")
-        self.sampler = LLNCADataSampler(self.dataset, config=self.config.sampler)
+
+        self.sampler = LLNCADataSampler(
+            self.dataset, config=self.config.sampler, debug=True
+        )
         print("\033[2msampler\033[0m ", end=" ")
+
         self.dataloader = torch.utils.data.DataLoader(
-            dataset=self.dataset, sampler=self.sampler
+            dataset=self.dataset, batch_sampler=self.sampler
         )
         print("\033[2mdataloader\033[0m ", end=" ")
 
         self.gen_nca = LLNCANCA(config=self.config.gen.nca)
         print("\033[2mgen_nca\033[0m ", end=" ")
+
         self.adv_nca = LLNCANCA(config=self.config.adv.nca)
         print("\033[2madv_nca\033[0m ", end=" ")
 
         gen_optim_conf = self.config.gen.optim
         adv_optim_conf = self.config.adv.optim
+
         self.gen_optim = optim.AdamW(
             self.gen_nca.parameters(),
             lr=gen_optim_conf.lr,
@@ -107,6 +119,7 @@ class LLNCA:
             weight_decay=gen_optim_conf.weight_decay,
         )
         print("\033[2mgen_optim\033[0m ", end=" ")
+
         self.adv_optim = optim.AdamW(
             self.adv_nca.parameters(),
             lr=adv_optim_conf.lr,
@@ -114,14 +127,17 @@ class LLNCA:
             weight_decay=adv_optim_conf.weight_decay,
         )
         print("\033[2madv_optim\033[0m ", end=" ")
+
         self.gen_scheduler = optim.lr_scheduler.ExponentialLR(
             self.gen_optim, gen_optim_conf.lr_gamma
         )
         print("\033[2mgen_scheduler\033[0m ", end=" ")
+
         self.adv_scheduler = optim.lr_scheduler.ExponentialLR(
             self.adv_optim, adv_optim_conf.lr_gamma
         )
         print("\033[2madv_scheduler\033[0m ", end=" ")
+
         print()
 
         if checkpoint is not None:
@@ -157,15 +173,51 @@ class LLNCA:
         self.gen_nca.train()
         self.adv_nca.train()
 
-        for epoch_i in tqdm(
-            range(self.curr_epoch, self.config.n_epochs),
-            total=self.config.n_epochs,
-            leave=True,
-            dynamic_ncols=True,
-            unit="epoch",
-        ):
-            for x, y in self.dataloader:
-                print(x, y)
+        # for epoch_i in tqdm(
+        #     range(self.curr_epoch, self.config.n_epochs),
+        #     total=self.config.n_epochs,
+        #     leave=False,
+        #     dynamic_ncols=True,
+        #     unit="epoch",
+        # ):
+        for x, y in self.dataloader:
+            _, ys = self.tok_to_embed(x, y)
+            _ys = self.embed_to_tok(ys)
+            print((_ys == ys).all())
+
+    def tok_to_embed(self, x_strs: list[str], y_strs: list[str]):
+        xs = []
+        ys = []
+        for i in range(len(x_strs)):
+            x = []
+            y = []
+            for tok in x_strs[i]:
+                x.append(self.embeddings.embed_from_tok(ord(tok)))
+            for tok in y_strs[i]:
+                y.append(self.embeddings.embed_from_tok(ord(tok)))
+
+            xs.append(torch.stack(x, dim=1))
+            ys.append(torch.stack(y, dim=1))
+
+        bin_size = self.config.sampler.bin_interval
+        pad_len = max([math.ceil(y.shape[1] / bin_size) * bin_size for y in ys])
+
+        xs = [F.pad(x, (0, pad_len - x.shape[1]), mode="constant", value=0) for x in xs]
+        xs = torch.stack(xs, dim=0)
+        ys = [F.pad(y, (0, pad_len - y.shape[1]), mode="constant", value=0) for y in ys]
+        ys = torch.stack(ys, dim=0)
+
+        return xs, ys
+
+    def embed_to_tok(self, x: torch.Tensor):
+        w = self.embeddings.embeddings.weight
+        x = x.permute(0, 2, 1)
+        x_norm = F.normalize(x, p=2, dim=-1)
+        w_norm = F.normalize(w, p=2, dim=-1)
+        cosine = torch.matmul(x_norm, w_norm.T)
+        idxs = torch.argmax(cosine, dim=-1)
+        y = self.embeddings.embeddings(idxs).permute(0, 2, 1)
+        return y
 
 
 # load tokenizer
@@ -185,10 +237,10 @@ if __name__ == "__main__":
     corpus_config = LLNCACorpusConfig(trunc_ratio=0.7, trunc_split=" ")
     dataset_config = LLNCADatasetConfig(file=corptok_path)
     sampler_config = LLNCADataSamplerConfig(
+        bin_interval=8,
         batch_len=8,
         drop_last=False,
         shuffle=True,
-        bin_interval=8,
     )
     embedding_config = LLNCAEmbeddingConfig(n_dims=16)
 
@@ -241,10 +293,10 @@ if __name__ == "__main__":
         vocab=vocab,
         gen=gen_config,
         adv=adv_config,
-        n_epochs=1000,
-        batch_size=8,
+        n_epochs=1,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )
 
     llnca = LLNCA(config=config)
+    llnca.train()

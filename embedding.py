@@ -25,26 +25,44 @@ class LLNCAEmbedding:
         self.embeddings = nn.Embedding(
             num_embeddings=len(self.tokenizer),
             embedding_dim=self.config.n_dims,
+            padding_idx=0,
         )
 
-        self.vocab_embed_map: dict[int, int] = {
-            k: i for i, (k, v) in enumerate(self.tokenizer.vocab.items())
+        self.tok_embed_map: dict[int, int] = {
+            k: i for i, (k, v) in enumerate(sorted(self.tokenizer.vocab.items()))
+        }
+        self.tok_str_embed_map: dict[str, int] = {
+            (k if isinstance(k, str) else k[0] + k[1]): self.tok_embed_map[v]
+            for k, v in self.tokenizer.ivocab.items()
         }
 
         if debug:
             print("\033[2membeddings\033[0m")
-            with np.printoptions(linewidth=10000, precision=4, suppress=True):
+            sorted_keys = sorted(self.tokenizer.vocab.keys())
+            for tok in sorted_keys[:5]:
+                self.print_embed(tok)
+            print("  \033[2m...\033[0m")
+            for tok in sorted_keys[-5:]:
+                self.print_embed(tok)
 
-                def print_embed(tok):
-                    embedding_i = self.vocab_embed_map[tok]
-                    embedding = self.embeddings.weight[embedding_i].detach().numpy()
-                    print(f"  \033[2m[{tok}]\t{embedding}\033[0m")
+            for char in "grass":
+                self.print_embed_str(char)
 
-                for tok in list(self.tokenizer.vocab.keys())[:5]:
-                    print_embed(tok)
-                print("  \033[2m...\033[0m")
-                for tok in list(self.tokenizer.vocab.keys())[-5:]:
-                    print_embed(tok)
+    def embed_from_tok(self, tok: int):
+        embed_i = self.tok_embed_map[tok]
+        return self.embeddings(torch.tensor(embed_i))
+
+    def print_embed(self, tok: int):
+        with np.printoptions(linewidth=10000, precision=4, suppress=True):
+            embedding_i = self.tok_embed_map[tok]
+            embedding = self.embeddings.weight[embedding_i].detach().numpy()
+            print(f"  \033[2m[{tok}]\t{embedding}\033[0m")
+
+    def print_embed_str(self, tok_str: str):
+        with np.printoptions(linewidth=10000, precision=4, suppress=True):
+            embedding_i = self.tok_str_embed_map[tok_str]
+            embedding = self.embeddings.weight[embedding_i].detach().numpy()
+            print(f"  \033[2m[{tok_str}]\t{embedding}\033[0m")
 
     def load(self, state):
         self.embeddings.load_state_dict(state)

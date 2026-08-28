@@ -20,10 +20,10 @@ class LLNCADataset(Dataset):
     def load(self):
         with open(self.config.file) as file:
             lines = file.readlines()
-        lines = [line.strip() for line in lines]
+        lines = [line.rstrip("\n") for line in lines]
         for i in range(0, len(lines), 2):
             x = lines[i][:]
-            y = lines[i + 1][:]
+            y = lines[i][:] + lines[i + 1][:]
             self.rows.append((x, y))
 
     def __len__(self):
@@ -35,10 +35,10 @@ class LLNCADataset(Dataset):
 
 @dataclass
 class LLNCADataSamplerConfig:
+    bin_interval: int
     batch_len: int
     drop_last: bool
-    shuffle: bool = True
-    bin_interval: int = 8
+    shuffle: bool
 
 
 class LLNCADataSampler(Sampler):
@@ -51,7 +51,7 @@ class LLNCADataSampler(Sampler):
         self.bins = defaultdict(list)
         b = self.config.bin_interval
         for i in range(len(dataset)):
-            l = len(dataset[i][0] + dataset[i][1])
+            l = len(dataset[i][1])
             l = math.ceil(l / b) * b
             self.bins[l].append(i)
 
@@ -97,5 +97,7 @@ if __name__ == "__main__":
     dataset_config = LLNCADatasetConfig(file=corptok_path)
     dataset = LLNCADataset(dataset_config)
     print("loading sampler...")
-    sampler_config = LLNCADataSamplerConfig(batch_len=8, drop_last=False, shuffle=True)
+    sampler_config = LLNCADataSamplerConfig(
+        bin_interval=8, batch_len=8, drop_last=False, shuffle=True
+    )
     sampler = LLNCADataSampler(dataset, sampler_config, debug=True)
