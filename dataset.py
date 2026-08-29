@@ -92,7 +92,7 @@ class LLNCADataSampler(Sampler):
 
 
 if __name__ == "__main__":
-    corptok_path = "data/ezpz/ezpz.corptok.txt"
+    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
     print(f"loading dataset... \033[2m{corptok_path}\033[0m")
     dataset_config = LLNCADatasetConfig(file=corptok_path)
     dataset = LLNCADataset(dataset_config)

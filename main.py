@@ -281,8 +281,8 @@ class LLNCA:
 #   optimize
 
 if __name__ == "__main__":
-    corptok_path = "data/ezpz/ezpz.corptok.txt"
-    vocab_path = "data/ezpz/ezpz.vocab.json"
+    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
+    vocab_path = "data/ezpz2/ezpz2.vocab.json"
 
     corpus_config = LLNCACorpusConfig(trunc_ratio=0.7, trunc_split=" ")
     dataset_config = LLNCADatasetConfig(file=corptok_path)

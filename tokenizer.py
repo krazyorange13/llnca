@@ -209,9 +209,9 @@ class LLNCATokenizer:
 
 
 def main():
-    corp_path = "data/ezpz/ezpz.corp.txt"
-    corptok_path = "data/ezpz/ezpz.corptok.txt"
-    vocab_path = "data/ezpz/ezpz.vocab.json"
+    corp_path = "data/ezpz2/ezpz2.corp.txt"
+    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
+    vocab_path = "data/ezpz2/ezpz2.vocab.json"
 
     print("loading text...", end=" ")
 

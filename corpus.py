@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class LLNCACorpusConfig:
-    trunc_ratio: float = 0.7
+    trunc_ratio: float = 0.8
     trunc_split: str = " "
 
 
@@ -42,4 +42,4 @@ if __name__ == "__main__":
     config = LLNCACorpusConfig()
     corpus = LLNCACorpus(config=config)
     print("generating corpus...")
-    corpus.generate(in_file="data/ezpz/ezpz.txt")
+    corpus.generate(in_file="data/ezpz2/ezpz2.txt")
