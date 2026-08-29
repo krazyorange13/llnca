@@ -175,6 +175,9 @@ class LLNCATokenizer:
 
         return counts
 
+    def decode(self, tok_str: str):
+        return "".join([self.expand_tok(ord(tok)) for tok in tok_str])
+
     def expand_tok(self, tok: int):
         toks: list[int] = [tok]
         strs: list[str] = []

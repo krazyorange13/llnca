@@ -145,6 +145,7 @@ class LLNCA:
         print()
 
         if checkpoint is not None:
+            self.embeddings.embeddings.load_state_dict(checkpoint["embeddings"])
             self.gen_nca.load_state_dict(checkpoint["gen_nca"])
             self.adv_nca.load_state_dict(checkpoint["adv_nca"])
             self.gen_optim.load_state_dict(checkpoint["gen_optim"])
@@ -159,6 +160,7 @@ class LLNCA:
     def make_checkpoint(self):
         state = {
             "config": self.config,
+            "embeddings": self.embeddings.embeddings.state_dict(),
             "gen_nca": self.gen_nca.state_dict(),
             "adv_nca": self.adv_nca.state_dict(),
             "gen_optim": self.gen_optim.state_dict(),
@@ -185,6 +187,7 @@ class LLNCA:
             unit="epoch",
         ):
             loss_acc = 0
+
             for x, y in self.dataloader:
                 n_steps = random.randint(
                     self.config.gen.steps[0], self.config.gen.steps[1]
@@ -200,6 +203,8 @@ class LLNCA:
                 self.gen_optim.step()
                 self.gen_optim.zero_grad()
 
+            self.gen_scheduler.step()
+
             loss_avg = loss_acc / len(self.dataloader)
             tqdm.write(str(loss_avg))
 
@@ -210,15 +215,17 @@ class LLNCA:
             n_steps = (self.config.gen.steps[0] + self.config.gen.steps[1]) // 2
             xs, ys = self.tok_to_embed(x, y)
             xs = self.gen_nca.add_channels(xs)
-            ys_pred = self.gen_nca(xs, steps=n_steps)
-            ys_pred = ys_pred[:, : self.config.embeddings.n_dims, :]
-
-            idxs, _ = self.nearest_embed(ys_pred)
-            y_pred = self.reconstruct_str(idxs)
-            print("x     ", x)
-            print("y     ", y)
-            print("y_pred", y_pred)
-            print("   match:", all(y[i] == y_pred[i] for i in range(len(y))))
+            y_pred = y
+            for _ in range(n_steps):
+                xs = self.gen_nca(xs, steps=1)
+                ys_pred = xs[:, : self.config.embeddings.n_dims, :]
+                idxs, _ = self.nearest_embed(ys_pred)
+                y_pred = self.reconstruct_str(idxs)
+                yield y_pred[0]
+            # print("x     ", x)
+            # print("y     ", y)
+            # print("y_pred", y_pred)
+            # print("   match:", all(y[i] == y_pred[i] for i in range(len(y))))
 
     def reconstruct_str(self, idxs: torch.Tensor):
         idxs = idxs.cpu()
@@ -288,7 +295,7 @@ if __name__ == "__main__":
     dataset_config = LLNCADatasetConfig(file=corptok_path)
     sampler_config = LLNCADataSamplerConfig(
         bin_interval=8,
-        batch_len=8,
+        batch_len=16,
         drop_last=False,
         shuffle=True,
     )
@@ -310,7 +317,7 @@ if __name__ == "__main__":
         ),
         LLNCAOptimConfig(
             lr=1e-3,
-            lr_gamma=0.9999,
+            lr_gamma=0.999,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -328,7 +335,7 @@ if __name__ == "__main__":
         ),
         LLNCAOptimConfig(
             lr=1e-3,
-            lr_gamma=0.9999,
+            lr_gamma=0.999,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -345,7 +352,7 @@ if __name__ == "__main__":
         vocab=vocab,
         gen=gen_config,
         adv=adv_config,
-        n_epochs=100,
+        n_epochs=1000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )
@@ -353,3 +360,4 @@ if __name__ == "__main__":
     llnca = LLNCA(config=config)
     llnca.train()
     llnca.eval()
+    llnca.save("models/alpha-1000.pth")
