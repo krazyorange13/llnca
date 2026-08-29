@@ -7,7 +7,7 @@ from torch.nn import functional as F
 
 
 class LLNCAFilter(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels: int):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = in_channels * 3
@@ -15,9 +15,7 @@ class LLNCAFilter(nn.Module):
             self.in_channels,
             self.out_channels,
             kernel_size=2,
-            padding=1,
             groups=in_channels,
-            padding_mode="zeros",
         )
         self.reset()
 
@@ -30,6 +28,7 @@ class LLNCAFilter(nn.Module):
             self.conv.weight.copy_(kernel.repeat(self.in_channels, 1, 1))
 
     def forward(self, x):
+        x = F.pad(x, (1, 0), mode="constant", value=0.0)
         return self.conv(x)
 
 
@@ -62,16 +61,23 @@ class LLNCANCA(nn.Module):
 
         self.seq = nn.Sequential(*layers)
 
+    def add_channels(self, x: torch.Tensor):
+        b, c, w = x.shape
+        n_h = self.config.channels - c
+        h = torch.zeros((b, n_h, w), device=x.device)
+        y = torch.cat([x, h], dim=1)
+        return y
+
     def get_alive_mask(self, x: torch.Tensor):
         y = F.pad(x.abs(), (1, 0), mode="constant", value=0.0)
-        y = F.max_pool1d(x.abs(), kernel_size=2, stride=1)
-        y = y.amax(dim=1)
+        y = F.max_pool1d(y, kernel_size=2, stride=1)
+        y = y.amax(dim=1, keepdim=True)
         y = y >= self.config.alive_threshold
         return y.float()
 
     def get_update_mask(self, x: torch.Tensor):
         b, _, w = x.shape
-        y = torch.rand(b, 1, w) < self.config.update_rate
+        y = torch.rand(b, 1, w, device=x.device) < self.config.update_rate
         return y.float()
 
     def step(self, x: torch.Tensor, freeze_mask: torch.Tensor):

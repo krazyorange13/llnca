@@ -8,15 +8,15 @@ from tokenizer import LLNCATokenizer, main
 
 
 @dataclass
-class LLNCAEmbeddingConfig:
+class LLNCAEmbeddingsConfig:
     n_dims: int
 
 
-class LLNCAEmbedding:
+class LLNCAEmbeddings:
     def __init__(
         self,
         tokenizer: LLNCATokenizer,
-        config: LLNCAEmbeddingConfig,
+        config: LLNCAEmbeddingsConfig,
         debug: bool = False,
     ):
         self.tokenizer = tokenizer
@@ -30,6 +30,9 @@ class LLNCAEmbedding:
 
         self.tok_embed_map: dict[int, int] = {
             k: i for i, (k, v) in enumerate(sorted(self.tokenizer.vocab.items()))
+        }
+        self.i_tok_embed_map: dict[int, int] = {
+            v: k for k, v in self.tok_embed_map.items()
         }
         self.tok_str_embed_map: dict[str, int] = {
             (k if isinstance(k, str) else k[0] + k[1]): self.tok_embed_map[v]
@@ -50,7 +53,9 @@ class LLNCAEmbedding:
 
     def embed_from_tok(self, tok: int):
         embed_i = self.tok_embed_map[tok]
-        return self.embeddings(torch.tensor(embed_i))
+        return self.embeddings(
+            torch.tensor(embed_i, device=self.embeddings.weight.device)
+        )
 
     def print_embed(self, tok: int):
         with np.printoptions(linewidth=10000, precision=4, suppress=True):
@@ -74,5 +79,5 @@ class LLNCAEmbedding:
 if __name__ == "__main__":
     tokenizer = main()
     print("loading embeddings...")
-    config = LLNCAEmbeddingConfig(n_dims=8)
-    embedding = LLNCAEmbedding(tokenizer=tokenizer, config=config, debug=True)
+    config = LLNCAEmbeddingsConfig(n_dims=8)
+    embedding = LLNCAEmbeddings(tokenizer=tokenizer, config=config, debug=True)
