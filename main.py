@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from torch import optim
 from tqdm.auto import tqdm
+from visdom import Visdom
 
 from corpus import LLNCACorpus, LLNCACorpusConfig
 from dataset import (
@@ -44,9 +45,15 @@ class LLNCAAdvConfig:
 
 
 @dataclass
-class LLNCAConfig:
-    name: str
+class LLNCACheckpointingConfig:
+    major_name: str
+    minor_name: str
     folder: str
+    freq: int
+
+
+@dataclass
+class LLNCAConfig:
     corpus: LLNCACorpusConfig
     dataset: LLNCADatasetConfig
     sampler: LLNCADataSamplerConfig
@@ -54,10 +61,7 @@ class LLNCAConfig:
     vocab: LLNCAVocab
     gen: LLNCAGenConfig
     adv: LLNCAAdvConfig
-    # gen_nca: LLNCANCAConfig
-    # adv_nca: LLNCANCAConfig
-    # gen_optim: LLNCAOptimConfig
-    # adv_optim: LLNCAOptimConfig
+    checkpointing: LLNCACheckpointingConfig
     n_epochs: int
     lambda_pxl: float
     lambda_gan: float
@@ -68,6 +72,7 @@ class LLNCA:
         self,
         checkpoint: dict | None = None,
         config: LLNCAConfig | None = None,
+        visdom: Visdom | None = None,
         debug: bool = False,
     ):
         if checkpoint is None and config is None:
@@ -81,6 +86,8 @@ class LLNCA:
         self.config: LLNCAConfig = (
             config if checkpoint is None else checkpoint["config"]
         )  # type: ignore
+
+        self.visdom = visdom
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -117,7 +124,8 @@ class LLNCA:
         adv_optim_conf = self.config.adv.optim
 
         self.gen_optim = optim.AdamW(
-            self.gen_nca.parameters(),
+            list(self.gen_nca.parameters())
+            + list(self.embeddings.embeddings.parameters()),
             lr=gen_optim_conf.lr,
             betas=gen_optim_conf.betas,
             weight_decay=gen_optim_conf.weight_decay,
@@ -155,9 +163,7 @@ class LLNCA:
 
         self.curr_epoch = 0
 
-        print(f"name: {self.config.name}")
-
-    def make_checkpoint(self):
+    def get_state(self):
         state = {
             "config": self.config,
             "embeddings": self.embeddings.embeddings.state_dict(),
@@ -172,8 +178,22 @@ class LLNCA:
         return state
 
     def save(self, path):
-        state = self.make_checkpoint()
+        state = self.get_state()
         torch.save(state, path)
+
+    def checkpoint(self):
+        segments = [
+            self.config.checkpointing.folder,
+            "/" if not self.config.checkpointing.folder.endswith("/") else "",
+            self.config.checkpointing.major_name,
+            "-" if self.config.checkpointing.minor_name != "" else "",
+            self.config.checkpointing.minor_name,
+            "-",
+            str(self.curr_epoch + 1),
+            ".pth",
+        ]
+        path = "".join(segments)
+        self.save(path)
 
     def train(self):
         self.gen_nca.train()
@@ -186,6 +206,7 @@ class LLNCA:
             dynamic_ncols=True,
             unit="epoch",
         ):
+            self.curr_epoch = epoch_i
             loss_acc = 0
 
             for x, y in self.dataloader:
@@ -197,7 +218,7 @@ class LLNCA:
                 ys_pred = self.gen_nca(xs, steps=n_steps)
                 ys_pred = ys_pred[:, : self.config.embeddings.n_dims, :]
 
-                loss = F.l1_loss(ys_pred, ys)
+                loss = F.l1_loss(ys_pred, ys.detach())
                 loss_acc += loss.item()
                 loss.backward()
                 self.gen_optim.step()
@@ -206,7 +227,23 @@ class LLNCA:
             self.gen_scheduler.step()
 
             loss_avg = loss_acc / len(self.dataloader)
-            tqdm.write(str(loss_avg))
+            if self.visdom:
+                if epoch_i == 0:
+                    self.loss_win = self.visdom.line(
+                        X=np.array([0]),
+                        Y=np.array([loss_avg]),
+                        opts={"title": "loss", "xlabel": "epochs", "ylabel": "loss"},
+                    )
+                else:
+                    self.visdom.line(
+                        X=np.array([epoch_i]),
+                        Y=np.array([loss_avg]),
+                        win=self.loss_win,
+                        update="append",
+                    )
+
+            if (epoch_i + 1) % self.config.checkpointing.freq == 0:
+                self.checkpoint()
 
     def eval(self):
         self.gen_nca.eval()
@@ -243,28 +280,27 @@ class LLNCA:
         return strs
 
     def tok_to_embed(self, x_strs: list[str], y_strs: list[str]):
-        xs = []
-        ys = []
-        for i in range(len(x_strs)):
-            x = []
-            y = []
-            for tok in x_strs[i]:
-                x.append(self.embeddings.embed_from_tok(ord(tok)))
-            for tok in y_strs[i]:
-                y.append(self.embeddings.embed_from_tok(ord(tok)))
-
-            xs.append(torch.stack(x, dim=1))
-            ys.append(torch.stack(y, dim=1))
-
         bin_size = self.config.sampler.bin_interval
-        pad_len = max([math.ceil(y.shape[1] / bin_size) * bin_size for y in ys])
+        max_len = max(max(len(s) for s in x_strs), max(len(s) for s in y_strs))
+        pad_len = math.ceil(max_len / bin_size) * bin_size
+        tok_map = self.embeddings.tok_embed_map
 
-        xs = [F.pad(x, (0, pad_len - x.shape[1]), mode="constant", value=0) for x in xs]
-        xs = torch.stack(xs, dim=0)
-        ys = [F.pad(y, (0, pad_len - y.shape[1]), mode="constant", value=0) for y in ys]
-        ys = torch.stack(ys, dim=0)
+        x_idxs = [
+            [tok_map.get(ord(c), 0) for c in s] + [0] * (pad_len - len(s))
+            for s in x_strs
+        ]
+        y_idxs = [
+            [tok_map.get(ord(c), 0) for c in s] + [0] * (pad_len - len(s))
+            for s in y_strs
+        ]
 
-        return xs.to(self.device), ys.to(self.device)
+        x_idx_tensor = torch.tensor(x_idxs, dtype=torch.long, device=self.device)
+        y_idx_tensor = torch.tensor(y_idxs, dtype=torch.long, device=self.device)
+
+        xs = self.embeddings.embeddings(x_idx_tensor).permute(0, 2, 1)
+        ys = self.embeddings.embeddings(y_idx_tensor).permute(0, 2, 1)
+
+        return xs, ys
 
     def nearest_embed(self, x: torch.Tensor):
         w = self.embeddings.embeddings.weight
@@ -299,7 +335,9 @@ if __name__ == "__main__":
         drop_last=False,
         shuffle=True,
     )
-    embedding_config = LLNCAEmbeddingsConfig(n_dims=16)
+    embedding_config = LLNCAEmbeddingsConfig(
+        n_dims=8,
+    )
 
     tokenizer = LLNCATokenizer()
     with open(vocab_path) as file:
@@ -308,11 +346,11 @@ if __name__ == "__main__":
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=64,
-            mlp_width=256,
-            mlp_depth=8,
+            channels=32,  # =96,
+            mlp_width=32,  # =256,
+            mlp_depth=8,  # =16,
             activation_fn="ReLU",
-            update_rate=0.25,
+            update_rate=0.5,
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
@@ -326,11 +364,11 @@ if __name__ == "__main__":
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=64,
-            mlp_width=256,
-            mlp_depth=8,
+            channels=32,  # =96,
+            mlp_width=32,  # =256,
+            mlp_depth=8,  # =16,
             activation_fn="ReLU",
-            update_rate=0.25,
+            update_rate=0.5,
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
@@ -342,9 +380,14 @@ if __name__ == "__main__":
         steps=(20, 30),
     )
 
-    config = LLNCAConfig(
-        name="alpha",
+    checkpointing_config = LLNCACheckpointingConfig(
+        major_name="alpha",
+        minor_name="b",
         folder="models",
+        freq=100,
+    )
+
+    config = LLNCAConfig(
         corpus=corpus_config,
         dataset=dataset_config,
         sampler=sampler_config,
@@ -352,12 +395,15 @@ if __name__ == "__main__":
         vocab=vocab,
         gen=gen_config,
         adv=adv_config,
-        n_epochs=1000,
+        checkpointing=checkpointing_config,
+        n_epochs=10000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )
 
-    llnca = LLNCA(config=config)
+    visdom = Visdom(server="https://visdom.krazyorange.dev", port=443)
+    if not visdom.check_connection():
+        visdom = None
+
+    llnca = LLNCA(config=config, visdom=visdom)
     llnca.train()
-    llnca.eval()
-    llnca.save("models/alpha-1000.pth")

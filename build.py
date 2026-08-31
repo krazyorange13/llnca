@@ -128,6 +128,7 @@ files = [
     "embedding.py",
     "nca.py",
     "main.py",
+    "eval.py",
 ]
 build_notebook(
     requirements=[],

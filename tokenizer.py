@@ -41,6 +41,7 @@ class LLNCATokenizer:
         self.n_workers = os.cpu_count() or 8
         self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
 
+        self.vocab[0] = "\x00"
         for i in range(32, 127):
             self.vocab[i] = chr(i)
 
