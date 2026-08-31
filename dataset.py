@@ -98,6 +98,9 @@ if __name__ == "__main__":
     dataset = LLNCADataset(dataset_config)
     print("loading sampler...")
     sampler_config = LLNCADataSamplerConfig(
-        bin_interval=8, batch_len=8, drop_last=False, shuffle=True
+        bin_interval=16,
+        batch_len=16,
+        drop_last=False,
+        shuffle=True,
     )
     sampler = LLNCADataSampler(dataset, sampler_config, debug=True)

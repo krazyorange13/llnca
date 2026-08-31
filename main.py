@@ -115,9 +115,11 @@ class LLNCA:
         print("\033[2mdataloader\033[0m ", end=" ")
 
         self.gen_nca = LLNCANCA(config=self.config.gen.nca).to(self.device)
+        # self.gen_nca = torch.compile(self.gen_nca)
         print("\033[2mgen_nca\033[0m ", end=" ")
 
         self.adv_nca = LLNCANCA(config=self.config.adv.nca).to(self.device)
+        # self.adv_nca = torch.compile(self.adv_nca)
         print("\033[2madv_nca\033[0m ", end=" ")
 
         gen_optim_conf = self.config.gen.optim
@@ -259,10 +261,6 @@ class LLNCA:
                 idxs, _ = self.nearest_embed(ys_pred)
                 y_pred = self.reconstruct_str(idxs)
                 yield y_pred[0]
-            # print("x     ", x)
-            # print("y     ", y)
-            # print("y_pred", y_pred)
-            # print("   match:", all(y[i] == y_pred[i] for i in range(len(y))))
 
     def reconstruct_str(self, idxs: torch.Tensor):
         idxs = idxs.cpu()
@@ -313,16 +311,6 @@ class LLNCA:
         return idxs, y
 
 
-# load tokenizer
-# load nca
-# load gan
-# loop:
-#   build img
-#   apply nca
-#   apply gan
-#   backprop
-#   optimize
-
 if __name__ == "__main__":
     corptok_path = "data/ezpz2/ezpz2.corptok.txt"
     vocab_path = "data/ezpz2/ezpz2.vocab.json"
@@ -330,7 +318,7 @@ if __name__ == "__main__":
     corpus_config = LLNCACorpusConfig(trunc_ratio=0.7, trunc_split=" ")
     dataset_config = LLNCADatasetConfig(file=corptok_path)
     sampler_config = LLNCADataSamplerConfig(
-        bin_interval=8,
+        bin_interval=16,
         batch_len=16,
         drop_last=False,
         shuffle=True,
@@ -346,16 +334,16 @@ if __name__ == "__main__":
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=32,  # =96,
-            mlp_width=32,  # =256,
-            mlp_depth=8,  # =16,
+            channels=64,
+            mlp_width=256,
+            mlp_depth=16,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
             lr=1e-3,
-            lr_gamma=0.999,
+            lr_gamma=0.9998,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -364,16 +352,16 @@ if __name__ == "__main__":
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=32,  # =96,
-            mlp_width=32,  # =256,
-            mlp_depth=8,  # =16,
+            channels=64,
+            mlp_width=256,
+            mlp_depth=16,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
             lr=1e-3,
-            lr_gamma=0.999,
+            lr_gamma=0.9998,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -384,7 +372,7 @@ if __name__ == "__main__":
         major_name="alpha",
         minor_name="b",
         folder="models",
-        freq=100,
+        freq=1000,
     )
 
     config = LLNCAConfig(
