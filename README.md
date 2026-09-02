@@ -12,3 +12,5 @@ modelling large language models (llms) using neural cellular automata (ncas).
 4. `embedding.py`
 5. `nca.py`
 6. `main.py`
+7. `eval.py`
+8. `build.py`
