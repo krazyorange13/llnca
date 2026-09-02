@@ -1,10 +1,11 @@
+import json
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 from torch import nn
 
-from tokenizer import LLNCATokenizer, main
+from tokenizer import LLNCATokenizer
 
 
 @dataclass
@@ -40,7 +41,6 @@ class LLNCAEmbeddings:
         }
 
         if debug:
-            print("\033[2membeddings\033[0m")
             sorted_keys = sorted(self.tokenizer.vocab.keys())
             for tok in sorted_keys[:5]:
                 self.print_embed(tok)
@@ -48,8 +48,8 @@ class LLNCAEmbeddings:
             for tok in sorted_keys[-5:]:
                 self.print_embed(tok)
 
-            for char in "grass":
-                self.print_embed_str(char)
+            print(f"  \033[2mn embeds: {len(self.embeddings.weight)}\033[0m")
+            print(f"  \033[2mn params: {self.embeddings.weight.numel()}\033[0m")
 
     def embed_from_tok(self, tok: int):
         embed_i = self.tok_embed_map[tok]
@@ -77,7 +77,16 @@ class LLNCAEmbeddings:
 
 
 if __name__ == "__main__":
-    tokenizer = main()
+    # corp_path = "data/harv/harv.corp.txt"
+    # corptok_path = "data/harv/harv.corptok.txt"
+    vocab_path = "data/harv/harv.vocab.json"
+
+    tokenizer = LLNCATokenizer()
+    print("loading vocab...", end=" ")
+    with open(vocab_path, "r") as file:
+        tokenizer.load_vocab(json.load(file))
+    print(f"\033[2m{vocab_path}\033[0m")
+
     print("loading embeddings...")
-    config = LLNCAEmbeddingsConfig(n_dims=8)
+    config = LLNCAEmbeddingsConfig(n_dims=16)
     embedding = LLNCAEmbeddings(tokenizer=tokenizer, config=config, debug=True)

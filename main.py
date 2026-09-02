@@ -323,19 +323,19 @@ class LLNCA:
 
 
 if __name__ == "__main__":
-    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
-    vocab_path = "data/ezpz2/ezpz2.vocab.json"
+    corptok_path = "data/harv/harv.corptok.txt"
+    vocab_path = "data/harv/harv.vocab.json"
 
     corpus_config = LLNCACorpusConfig(trunc_ratio=0.7, trunc_split=" ")
     dataset_config = LLNCADatasetConfig(file=corptok_path)
     sampler_config = LLNCADataSamplerConfig(
-        bin_interval=16,
+        bin_interval=18,
         batch_len=16,
         drop_last=False,
         shuffle=True,
     )
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=8,
+        n_dims=16,
     )
 
     tokenizer = LLNCATokenizer()
@@ -345,9 +345,9 @@ if __name__ == "__main__":
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=32,
-            mlp_width=64,
-            mlp_depth=8,
+            channels=64,
+            mlp_width=128,
+            mlp_depth=16,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
@@ -358,14 +358,14 @@ if __name__ == "__main__":
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
-        steps=(20, 30),
+        steps=(30, 40),
     )
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=32,
-            mlp_width=64,
-            mlp_depth=8,
+            channels=64,
+            mlp_width=128,
+            mlp_depth=16,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
@@ -376,14 +376,14 @@ if __name__ == "__main__":
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
-        steps=(20, 30),
+        steps=(30, 40),
     )
 
     checkpointing_config = LLNCACheckpointingConfig(
-        major_name="alpha",
-        minor_name="c-mini",
+        major_name="beta",
+        minor_name="a",
         folder="models",
-        freq=2000,
+        freq=5000,
     )
 
     config = LLNCAConfig(
@@ -395,7 +395,7 @@ if __name__ == "__main__":
         gen=gen_config,
         adv=adv_config,
         checkpointing=checkpointing_config,
-        n_epochs=20000,
+        n_epochs=50000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )

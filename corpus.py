@@ -36,10 +36,27 @@ class LLNCACorpus:
 
         print(f"\033[2m out: {out_file}\033[0m")
 
+    def verify(self, in_file: str):
+        with open(in_file) as file:
+            lines = file.readlines()
+            xs = lines[::2]
+            ys = lines[1::2]
+            uxs = set(xs)
+            uys = set(ys)
+            valid_xs = len(xs) == len(uxs)
+            valid_ys = len(ys) == len(uys)
+            print(f"\033[2m valid xs: {valid_xs}\033[0m")
+            print(f"\033[2m valid ys: {valid_ys}\033[0m")
+            return valid_xs, valid_ys
+
 
 if __name__ == "__main__":
+    in_file = "data/harv/harv.txt"
     print("loading config...")
-    config = LLNCACorpusConfig()
+    config = LLNCACorpusConfig(
+        trunc_ratio=0.7,
+    )
     corpus = LLNCACorpus(config=config)
     print("generating corpus...")
-    corpus.generate(in_file="data/ezpz2/ezpz2.txt")
+    corpus.generate(in_file=in_file)
+    corpus.verify(in_file=in_file)

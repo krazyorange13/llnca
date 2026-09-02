@@ -60,7 +60,9 @@ class LLNCADataSampler(Sampler):
             bin_sz_maxlen = max(len(str(bin_sz)) for bin_sz in self.bins)
             for bin_sz, bin_l in sorted(self.bins.items()):
                 bin_sz_str = str(bin_sz).rjust(bin_sz_maxlen)
-                print(f"  \033[2m{bin_sz_str}: {'.' * len(bin_l)}\033[0m")
+                print(
+                    f"  \033[2m{bin_sz_str}: ({len(bin_l)}) {'.' * len(bin_l)}\033[0m"
+                )
 
     def __iter__(self):
         batches = []
@@ -92,13 +94,13 @@ class LLNCADataSampler(Sampler):
 
 
 if __name__ == "__main__":
-    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
+    corptok_path = "data/harv/harv.corptok.txt"
     print(f"loading dataset... \033[2m{corptok_path}\033[0m")
     dataset_config = LLNCADatasetConfig(file=corptok_path)
     dataset = LLNCADataset(dataset_config)
     print("loading sampler...")
     sampler_config = LLNCADataSamplerConfig(
-        bin_interval=16,
+        bin_interval=18,
         batch_len=16,
         drop_last=False,
         shuffle=True,
