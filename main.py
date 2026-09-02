@@ -231,10 +231,21 @@ class LLNCA:
             loss_avg = loss_acc / len(self.dataloader)
             if self.visdom:
                 if epoch_i == 0:
+                    name = "".join(
+                        [
+                            self.config.checkpointing.major_name,
+                            "-" if self.config.checkpointing.minor_name else "",
+                            self.config.checkpointing.minor_name,
+                        ]
+                    )
                     self.loss_win = self.visdom.line(
                         X=np.array([0]),
                         Y=np.array([loss_avg]),
-                        opts={"title": "loss", "xlabel": "epochs", "ylabel": "loss"},
+                        opts={
+                            "title": f"{name} loss",
+                            "xlabel": "epochs",
+                            "ylabel": "loss",
+                        },
                     )
                 else:
                     self.visdom.line(
@@ -260,7 +271,7 @@ class LLNCA:
                 ys_pred = xs[:, : self.config.embeddings.n_dims, :]
                 idxs, _ = self.nearest_embed(ys_pred)
                 y_pred = self.reconstruct_str(idxs)
-                yield y_pred[0]
+                yield ys_pred[0], y_pred[0]
 
     def reconstruct_str(self, idxs: torch.Tensor):
         idxs = idxs.cpu()
@@ -334,16 +345,16 @@ if __name__ == "__main__":
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=64,
-            mlp_width=256,
-            mlp_depth=16,
+            channels=32,
+            mlp_width=64,
+            mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
             lr=1e-3,
-            lr_gamma=0.9998,
+            lr_gamma=0.99999,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -352,16 +363,16 @@ if __name__ == "__main__":
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=64,
-            mlp_width=256,
-            mlp_depth=16,
+            channels=32,
+            mlp_width=64,
+            mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
             lr=1e-3,
-            lr_gamma=0.9998,
+            lr_gamma=0.99999,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -370,9 +381,9 @@ if __name__ == "__main__":
 
     checkpointing_config = LLNCACheckpointingConfig(
         major_name="alpha",
-        minor_name="b",
+        minor_name="c-mini",
         folder="models",
-        freq=1000,
+        freq=2000,
     )
 
     config = LLNCAConfig(
@@ -384,7 +395,7 @@ if __name__ == "__main__":
         gen=gen_config,
         adv=adv_config,
         checkpointing=checkpointing_config,
-        n_epochs=10000,
+        n_epochs=20000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )

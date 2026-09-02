@@ -37,33 +37,48 @@ if __name__ == "__main__":
         )
     )
 
-    llnca1 = LLNCA(
-        checkpoint=torch.load(
-            "models/alpha-a-25.pth",
-            weights_only=False,
-            map_location=torch.device("cpu"),
-        )
-    )
-    llnca2 = LLNCA(
-        checkpoint=torch.load(
-            "models/alpha-a-1000.pth",
-            weights_only=False,
-            map_location=torch.device("cpu"),
-        )
-    )
-    embds1 = llnca1.embeddings.embeddings.weight
-    embds2 = llnca2.embeddings.embeddings.weight
-    diff = embds2 - embds1
-    print(diff)
-    print("min", diff.min())
-    print("max", diff.max())
-    print("mean", diff.mean())
-    print("std", diff.std())
+    # llnca1 = LLNCA(
+    #     checkpoint=torch.load(
+    #         "models/alpha-c-mini-20000.pth",
+    #         weights_only=False,
+    #         map_location=torch.device("cpu"),
+    #     )
+    # )
+    # llnca2 = LLNCA(
+    #     checkpoint=torch.load(
+    #         "models/alpha-c-nano-20000.pth",
+    #         weights_only=False,
+    #         map_location=torch.device("cpu"),
+    #     )
+    # )
+    # embds1 = llnca1.embeddings.embeddings.weight
+    # embds2 = llnca2.embeddings.embeddings.weight
+    # diff = embds2 - embds1
+    # print("embds2 stats")
+    # print(embds2.detach())
+    # print("min", embds2.min().detach())
+    # print("max", embds2.max().detach())
+    # print("mean", embds2.mean().detach())
+    # print("std", embds2.std().detach())
+    # print("diff stats")
+    # print(diff)
+    # print("min", diff.min().detach())
+    # print("max", diff.max().detach())
+    # print("mean", diff.mean().detach())
+    # print("std", diff.std().detach())
 
     while True:
+        prev_layers = None
         prev_frame = ""
-        for frame in llnca.eval():
+        for layers, frame in llnca.eval():
             frame_str = llnca.tokenizer.decode(frame)
+            if prev_layers is None:
+                prev_layers = layers
+                layers_diff = None
+            else:
+                layers_diff = layers - prev_layers
+                prev_layers = layers
+            # print("\33[2K\r" + (f"(delta mean={layers_diff.mean().item()} std={layers_diff.std().item()}) " if layers_diff is not None else "") + frame_str, end="", flush=True)
             print("\33[2K\r" + frame_str, end="", flush=True)
             if prev_frame != frame_str:
                 time.sleep(0.25)
