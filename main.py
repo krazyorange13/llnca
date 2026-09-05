@@ -91,7 +91,8 @@ class LLNCA:
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        print("loading...", end=" ")
+        _epoch_str = ("-" + str(checkpoint["curr_epoch"] + 1)) if checkpoint else ""
+        print(f"loading {self.get_name()}{_epoch_str}...", end=" ")
 
         self.corpus = LLNCACorpus(config=self.config.corpus)
         print("\033[2mcorpus\033[0m ", end=" ")
@@ -165,6 +166,8 @@ class LLNCA:
 
         self.curr_epoch = 0
 
+        self.scaler = torch.amp.GradScaler("cuda", enabled=(self.device.type == "cuda"))
+
     def get_state(self):
         state = {
             "config": self.config,
@@ -203,41 +206,38 @@ class LLNCA:
 
         for epoch_i in tqdm(
             range(self.curr_epoch, self.config.n_epochs),
+            initial=self.curr_epoch,
             total=self.config.n_epochs,
             leave=False,
             dynamic_ncols=True,
             unit="epoch",
         ):
             self.curr_epoch = epoch_i
-            loss_acc = 0
+            loss_acc = torch.tensor(0.0, device=self.device)
 
             for x, y in self.dataloader:
                 n_steps = random.randint(
                     self.config.gen.steps[0], self.config.gen.steps[1]
                 )
-                xs, ys = self.tok_to_embed(x, y)
-                xs = self.gen_nca.add_channels(xs)
-                ys_pred = self.gen_nca(xs, steps=n_steps)
-                ys_pred = ys_pred[:, : self.config.embeddings.n_dims, :]
+                with torch.amp.autocast("cuda", enabled=(self.device.type == "cuda")):
+                    xs, ys = self.tok_to_embed(x, y)
+                    xs = self.gen_nca.add_channels(xs)
+                    ys_pred = self.gen_nca(xs, steps=n_steps)
+                    ys_pred = ys_pred[:, : self.config.embeddings.n_dims, :]
+                    loss = F.l1_loss(ys_pred, ys.detach())
 
-                loss = F.l1_loss(ys_pred, ys.detach())
-                loss_acc += loss.item()
-                loss.backward()
-                self.gen_optim.step()
-                self.gen_optim.zero_grad()
+                loss_acc += loss.detach()
+                self.scaler.scale(loss).backward()
+                self.scaler.step(self.gen_optim)
+                self.scaler.update()
+                self.gen_optim.zero_grad(set_to_none=True)
 
             self.gen_scheduler.step()
 
             loss_avg = loss_acc / len(self.dataloader)
             if self.visdom:
                 if epoch_i == 0:
-                    name = "".join(
-                        [
-                            self.config.checkpointing.major_name,
-                            "-" if self.config.checkpointing.minor_name else "",
-                            self.config.checkpointing.minor_name,
-                        ]
-                    )
+                    name = self.get_name()
                     self.loss_win = self.visdom.line(
                         X=np.array([0]),
                         Y=np.array([loss_avg]),
@@ -258,6 +258,15 @@ class LLNCA:
             if (epoch_i + 1) % self.config.checkpointing.freq == 0:
                 self.checkpoint()
 
+    def get_name(self):
+        return "".join(
+            [
+                self.config.checkpointing.major_name,
+                "-" if self.config.checkpointing.minor_name else "",
+                self.config.checkpointing.minor_name,
+            ]
+        )
+
     def eval(self):
         self.gen_nca.eval()
         self.adv_nca.eval()
@@ -271,7 +280,20 @@ class LLNCA:
                 ys_pred = xs[:, : self.config.embeddings.n_dims, :]
                 idxs, _ = self.nearest_embed(ys_pred)
                 y_pred = self.reconstruct_str(idxs)
-                yield ys_pred[0], y_pred[0]
+                yield x[0], y[0], xs[0], y_pred[0]
+
+    def eval_str(self, x: str):
+        self.gen_nca.eval()
+        self.adv_nca.eval()
+        n_steps = (self.config.gen.steps[0] + self.config.gen.steps[1]) // 2
+        xs, _ = self.tok_to_embed([x], [])
+        xs = self.gen_nca.add_channels(xs)
+        for _ in range(n_steps):
+            xs = self.gen_nca(xs, steps=1)
+            ys_pred = xs[:, : self.config.embeddings.n_dims, :]
+            idxs, _ = self.nearest_embed(ys_pred)
+            y_pred = self.reconstruct_str(idxs)
+            yield xs[0], y_pred[0]
 
     def reconstruct_str(self, idxs: torch.Tensor):
         idxs = idxs.cpu()
@@ -335,7 +357,7 @@ if __name__ == "__main__":
         shuffle=True,
     )
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=16,
+        n_dims=12,
     )
 
     tokenizer = LLNCATokenizer()
@@ -345,9 +367,9 @@ if __name__ == "__main__":
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=64,
-            mlp_width=128,
-            mlp_depth=16,
+            channels=24,
+            mlp_width=64,
+            mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
@@ -363,9 +385,9 @@ if __name__ == "__main__":
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=64,
-            mlp_width=128,
-            mlp_depth=16,
+            channels=24,
+            mlp_width=64,
+            mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
@@ -381,9 +403,9 @@ if __name__ == "__main__":
 
     checkpointing_config = LLNCACheckpointingConfig(
         major_name="beta",
-        minor_name="a",
+        minor_name="d",
         folder="models",
-        freq=5000,
+        freq=1000,
     )
 
     config = LLNCAConfig(
@@ -400,9 +422,14 @@ if __name__ == "__main__":
         lambda_gan=0.5,
     )
 
-    visdom = Visdom(server="https://visdom.krazyorange.dev", port=443)
+    # visdom = Visdom(server="https://visdom.krazyorange.dev", port=443)
+    visdom = Visdom(server="localhost", port=8097)
     if not visdom.check_connection():
         visdom = None
 
-    llnca = LLNCA(config=config, visdom=visdom)
+    # llnca = LLNCA(config=config, visdom=visdom)
+    llnca = LLNCA(
+        checkpoint=torch.load("models/beta-d-48000.pth", weights_only=False),
+        visdom=visdom,
+    )
     llnca.train()

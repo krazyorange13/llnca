@@ -1,6 +1,9 @@
 import sys
+import threading
 import time
 
+import dearpygui.dearpygui as dpg
+import numpy as np
 import torch
 
 from corpus import LLNCACorpus, LLNCACorpusConfig
@@ -46,7 +49,7 @@ if __name__ == "__main__":
     # )
     # llnca2 = LLNCA(
     #     checkpoint=torch.load(
-    #         "models/alpha-c-nano-20000.pth",
+    #         path,
     #         weights_only=False,
     #         map_location=torch.device("cpu"),
     #     )
@@ -70,16 +73,12 @@ if __name__ == "__main__":
     while True:
         prev_layers = None
         prev_frame = ""
-        for layers, frame in llnca.eval():
+        for x, y, xs, frame in llnca.eval():
+            x_str = llnca.tokenizer.decode(x)
+            y_str = llnca.tokenizer.decode(y)
+            target_str = f"[\033[2m{y_str[: len(x_str)]}\033[0m{y_str[len(x_str) :]}]"
             frame_str = llnca.tokenizer.decode(frame)
-            if prev_layers is None:
-                prev_layers = layers
-                layers_diff = None
-            else:
-                layers_diff = layers - prev_layers
-                prev_layers = layers
-            # print("\33[2K\r" + (f"(delta mean={layers_diff.mean().item()} std={layers_diff.std().item()}) " if layers_diff is not None else "") + frame_str, end="", flush=True)
-            print("\33[2K\r" + frame_str, end="", flush=True)
+            print("\33[2K\r" + f"{target_str} {frame_str}", end="", flush=True)
             if prev_frame != frame_str:
                 time.sleep(0.25)
             prev_frame = frame_str
