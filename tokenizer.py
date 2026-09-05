@@ -112,12 +112,13 @@ class LLNCATokenizer:
 
         return n_merges
 
-    def encode(self, text: str, debug: bool = False):
+    def encode(self, text: str, silent: bool = True, debug: bool = False):
         prev = time.perf_counter()
         toks_str, n_merges = self._encode(text, debug)
         curr = time.perf_counter()
         diff = curr - prev
-        print(f"\033[2mmade {n_merges} merges in {diff:.6f} seconds.\033[0m")
+        if not silent:
+            print(f"\033[2mmade {n_merges} merges in {diff:.6f} seconds.\033[0m")
         return toks_str
 
     def _encode(self, text: str, debug: bool = False):
@@ -135,20 +136,22 @@ class LLNCATokenizer:
             if not counts:
                 break
 
-            most_tok = 0
-            most_common = (("", ""), 0)
-            for pair, count in counts.most_common():
-                if pair in self.ivocab:
-                    most_tok = self.ivocab[pair]
-                    most_common = (pair, count)
-                    break
+            best_tok: int = float("inf")  # type: ignore
+            best_pair = None
 
-            most_pair, most_count = most_common
-            if most_count <= 1:
+            for pair in counts:
+                if pair in self.ivocab:
+                    tok_id = self.ivocab[pair]
+                    if tok_id < best_tok:
+                        best_tok = tok_id
+                        best_pair = pair
+
+            if best_pair is None:
                 break
 
-            c1, c2 = most_pair
-            toks_str = toks_str.replace(c1 + c2, chr(most_tok))
+            c1, c2 = best_pair
+            toks_str = toks_str.replace(c1 + c2, chr(best_tok))
+
             n_merges += 1
 
             if debug:
@@ -237,7 +240,7 @@ def main():
     # print(tokenizer.vocab)
 
     print("encoding...", end=" ")
-    corptok = tokenizer.encode(corp)
+    corptok = tokenizer.encode(corp, silent=False)
 
     print("writing...", end=" ")
     with open(corptok_path, "w") as file:

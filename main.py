@@ -267,6 +267,7 @@ class LLNCA:
             ]
         )
 
+    @torch.no_grad()
     def eval(self):
         self.gen_nca.eval()
         self.adv_nca.eval()
@@ -282,7 +283,9 @@ class LLNCA:
                 y_pred = self.reconstruct_str(idxs)
                 yield x[0], y[0], xs[0], y_pred[0]
 
+    @torch.no_grad()
     def eval_str(self, x: str):
+        x = self.tokenizer.encode(x)
         self.gen_nca.eval()
         self.adv_nca.eval()
         n_steps = (self.config.gen.steps[0] + self.config.gen.steps[1]) // 2
@@ -294,6 +297,25 @@ class LLNCA:
             idxs, _ = self.nearest_embed(ys_pred)
             y_pred = self.reconstruct_str(idxs)
             yield xs[0], y_pred[0]
+
+    @torch.no_grad()
+    def eval_start(self, x: list[str]):
+        x = [self.tokenizer.encode(s) for s in x]
+        self.gen_nca.eval()
+        self.adv_nca.eval()
+        xs, _ = self.tok_to_embed(x, [""])
+        xs = self.gen_nca.add_channels(xs)
+        return xs
+
+    @torch.no_grad()
+    def eval_step(self, xs: torch.Tensor):
+        self.gen_nca.eval()
+        self.adv_nca.eval()
+        xs = self.gen_nca(xs, steps=1)
+        ys_pred = xs[:, : self.config.embeddings.n_dims, :]
+        idxs, _ = self.nearest_embed(ys_pred)
+        y_pred = self.reconstruct_str(idxs)
+        return xs, y_pred
 
     def reconstruct_str(self, idxs: torch.Tensor):
         idxs = idxs.cpu()
