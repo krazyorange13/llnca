@@ -10,7 +10,12 @@ from torch import optim
 from tqdm.auto import tqdm
 from visdom import Visdom
 
-from corpus import LLNCACorpus, LLNCACorpusConfig
+from corpus import (
+    LLNCACorpus,
+    LLNCACorpusConfig,
+    LLNCACorpusSlidingConfig,
+    LLNCACorpusTruncConfig,
+)
 from dataset import (
     LLNCADataSampler,
     LLNCADataSamplerConfig,
@@ -370,7 +375,16 @@ if __name__ == "__main__":
     corptok_path = "data/harv/harv.corptok.txt"
     vocab_path = "data/harv/harv.vocab.json"
 
-    corpus_config = LLNCACorpusConfig(trunc_ratio=0.7, trunc_split=" ")
+    corpus_config = LLNCACorpusConfig(
+        LLNCACorpusSlidingConfig(
+            window_len=15,
+            window_space=5,
+            word_level=True,
+        ),
+        LLNCACorpusTruncConfig(
+            ratio=0.7,
+        ),
+    )
     dataset_config = LLNCADatasetConfig(file=corptok_path)
     sampler_config = LLNCADataSamplerConfig(
         bin_interval=18,

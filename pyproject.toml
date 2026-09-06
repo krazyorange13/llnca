@@ -5,6 +5,7 @@ description = "large language neural cellular automata"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "bpeasy>=0.1.6",
     "dearpygui>=2.3.1",
     "nbformat>=5.11.1",
     "numpy>=2.5.2",

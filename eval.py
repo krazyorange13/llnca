@@ -6,7 +6,12 @@ import dearpygui.dearpygui as dpg
 import numpy as np
 import torch
 
-from corpus import LLNCACorpus, LLNCACorpusConfig
+from corpus import (
+    LLNCACorpus,
+    LLNCACorpusConfig,
+    LLNCACorpusSlidingConfig,
+    LLNCACorpusTruncConfig,
+)
 from dataset import (
     LLNCADataSampler,
     LLNCADataSamplerConfig,
