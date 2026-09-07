@@ -160,6 +160,8 @@ class LLNCA:
 
         print()
 
+        self.curr_epoch = 0
+
         if checkpoint is not None:
             self.embeddings.embeddings.load_state_dict(checkpoint["embeddings"])
             self.gen_nca.load_state_dict(checkpoint["gen_nca"])
@@ -168,8 +170,7 @@ class LLNCA:
             self.adv_optim.load_state_dict(checkpoint["adv_optim"])
             self.gen_scheduler.load_state_dict(checkpoint["gen_scheduler"])
             self.adv_scheduler.load_state_dict(checkpoint["adv_scheduler"])
-
-        self.curr_epoch = 0
+            self.curr_epoch = checkpoint["curr_epoch"]
 
         self.scaler = torch.amp.GradScaler("cuda", enabled=(self.device.type == "cuda"))
 
@@ -241,22 +242,24 @@ class LLNCA:
 
             loss_avg = loss_acc / len(self.dataloader)
             if self.visdom:
+                name = self.get_name()
                 if epoch_i == 0:
-                    name = self.get_name()
-                    self.loss_win = self.visdom.line(
+                    self.visdom.line(
                         X=np.array([0]),
                         Y=np.array([loss_avg]),
+                        win=f"{name} loss",
                         opts={
                             "title": f"{name} loss",
                             "xlabel": "epochs",
                             "ylabel": "loss",
                         },
+                        update="append",
                     )
                 else:
                     self.visdom.line(
                         X=np.array([epoch_i]),
                         Y=np.array([loss_avg]),
-                        win=self.loss_win,
+                        win=f"{name} loss",
                         update="append",
                     )
 
@@ -372,8 +375,8 @@ class LLNCA:
 
 
 if __name__ == "__main__":
-    corptok_path = "data/harv/harv.corptok.txt"
-    vocab_path = "data/harv/harv.vocab.json"
+    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
+    vocab_path = "data/ezpz2/ezpz2.vocab.json"
 
     corpus_config = LLNCACorpusConfig(
         LLNCACorpusSlidingConfig(
@@ -393,7 +396,7 @@ if __name__ == "__main__":
         shuffle=True,
     )
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=12,
+        n_dims=8,
     )
 
     tokenizer = LLNCATokenizer()
@@ -403,8 +406,8 @@ if __name__ == "__main__":
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=24,
-            mlp_width=64,
+            channels=16,
+            mlp_width=32,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -416,13 +419,13 @@ if __name__ == "__main__":
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
-        steps=(30, 40),
+        steps=(20, 30),
     )
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=24,
-            mlp_width=64,
+            channels=16,
+            mlp_width=32,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -434,14 +437,14 @@ if __name__ == "__main__":
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
-        steps=(30, 40),
+        steps=(20, 30),
     )
 
     checkpointing_config = LLNCACheckpointingConfig(
-        major_name="beta",
-        minor_name="d",
+        major_name="tempa",
+        minor_name="trunc2",
         folder="models",
-        freq=1000,
+        freq=500,
     )
 
     config = LLNCAConfig(
@@ -453,7 +456,7 @@ if __name__ == "__main__":
         gen=gen_config,
         adv=adv_config,
         checkpointing=checkpointing_config,
-        n_epochs=50000,
+        n_epochs=5000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )
@@ -463,9 +466,12 @@ if __name__ == "__main__":
     if not visdom.check_connection():
         visdom = None
 
+    checkpoint = torch.load("models/tempa-trunc2-5000.pth", weights_only=False)
+    checkpoint["config"].n_epochs = 10000
+
     # llnca = LLNCA(config=config, visdom=visdom)
     llnca = LLNCA(
-        checkpoint=torch.load("models/beta-d-48000.pth", weights_only=False),
+        checkpoint=checkpoint,
         visdom=visdom,
     )
     llnca.train()

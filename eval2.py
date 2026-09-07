@@ -134,7 +134,7 @@ class LLNCAProcess:
         self.process = multiprocessing.Process(
             target=self.process_run,
             args=(self.model_path, self.process_stop_event, self.inputs, self.frames),
-            daemon=True,
+            daemon=False,
         )
         self.thread_stop_event = threading.Event()
         self.thread = threading.Thread(
