@@ -22,9 +22,9 @@ from dataset import (
     LLNCADataset,
     LLNCADatasetConfig,
 )
-from embedding import LLNCAEmbeddings, LLNCAEmbeddingsConfig
+from embedding import LLNCAEmbeddings2, LLNCAEmbeddingsConfig
 from nca import LLNCANCA, LLNCANCAConfig
-from tokenizer import LLNCATokenizer, LLNCAVocab
+from tokenizer2 import LLNCATokenizer2, LLNCATokenizer2Config, LLNCAVocab2
 
 
 @dataclass
@@ -63,7 +63,8 @@ class LLNCAConfig:
     dataset: LLNCADatasetConfig
     sampler: LLNCADataSamplerConfig
     embeddings: LLNCAEmbeddingsConfig
-    vocab: LLNCAVocab
+    tokenizer: LLNCATokenizer2Config
+    vocab: LLNCAVocab2
     gen: LLNCAGenConfig
     adv: LLNCAAdvConfig
     checkpointing: LLNCACheckpointingConfig
@@ -102,10 +103,14 @@ class LLNCA:
         self.corpus = LLNCACorpus(config=self.config.corpus)
         print("\033[2mcorpus\033[0m ", end=" ")
 
-        self.tokenizer = LLNCATokenizer(vocab=self.config.vocab)
+        self.tokenizer = LLNCATokenizer2(
+            config=self.config.tokenizer, vocab=self.config.vocab
+        )
         print("\033[2mtokenizer\033[0m ", end=" ")
 
-        self.embeddings = LLNCAEmbeddings(self.tokenizer, config=self.config.embeddings)
+        self.embeddings = LLNCAEmbeddings2(
+            self.tokenizer, config=self.config.embeddings
+        )
         self.embeddings.embeddings.to(self.device)
         print("\033[2membeddings\033[0m ", end=" ")
 
@@ -326,33 +331,27 @@ class LLNCA:
         return xs, y_pred
 
     def reconstruct_str(self, idxs: torch.Tensor):
+        # return idxs.cpu().tolist()
         idxs = idxs.cpu()
         strs = []
         for i in range(len(idxs)):
-            chrs = []
-            for n in idxs[i]:
-                _ord = self.embeddings.i_tok_embed_map[int(n.item())]
-                if _ord == 0:
-                    continue
-                _chr = chr(_ord)
-                chrs.append(_chr)
-            _str = "".join(chrs)
-            strs.append(_str)
+            strs.append(self.tokenizer._encode_toks(idxs[i].tolist()))
         return strs
 
     def tok_to_embed(self, x_strs: list[str], y_strs: list[str]):
         bin_size = self.config.sampler.bin_interval
         max_len = max(max(len(s) for s in x_strs), max(len(s) for s in y_strs))
         pad_len = math.ceil(max_len / bin_size) * bin_size
-        tok_map = self.embeddings.tok_embed_map
 
         x_idxs = [
-            [tok_map.get(ord(c), 0) for c in s] + [0] * (pad_len - len(s))
-            for s in x_strs
+            self.tokenizer._decode_toks(x_str)
+            + [self.tokenizer.get_special_tok("<pad>")] * (pad_len - len(x_str))
+            for x_str in x_strs
         ]
         y_idxs = [
-            [tok_map.get(ord(c), 0) for c in s] + [0] * (pad_len - len(s))
-            for s in y_strs
+            self.tokenizer._decode_toks(y_str)
+            + [self.tokenizer.get_special_tok("<pad>")] * (pad_len - len(y_str))
+            for y_str in y_strs
         ]
 
         x_idx_tensor = torch.tensor(x_idxs, dtype=torch.long, device=self.device)
@@ -376,7 +375,7 @@ class LLNCA:
 
 if __name__ == "__main__":
     corptok_path = "data/ezpz2/ezpz2.corptok.txt"
-    vocab_path = "data/ezpz2/ezpz2.vocab.json"
+    vocab_path = "data/ezpz2/ezpz2.tokenizer.json"
 
     corpus_config = LLNCACorpusConfig(
         LLNCACorpusSlidingConfig(
@@ -399,15 +398,17 @@ if __name__ == "__main__":
         n_dims=8,
     )
 
-    tokenizer = LLNCATokenizer()
+    tokenizer_config = LLNCATokenizer2Config(
+        special_tokens=["<pad>"],
+        max_token_length=4,
+    )
     with open(vocab_path) as file:
-        tokenizer.load_vocab(json.load(file))
-    vocab = tokenizer.vocab
+        vocab = json.load(file)
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=16,
-            mlp_width=32,
+            channels=24,
+            mlp_width=64,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -441,8 +442,8 @@ if __name__ == "__main__":
     )
 
     checkpointing_config = LLNCACheckpointingConfig(
-        major_name="tempa",
-        minor_name="trunc2",
+        major_name="temp",
+        minor_name="tok2",
         folder="models",
         freq=500,
     )
@@ -452,11 +453,12 @@ if __name__ == "__main__":
         dataset=dataset_config,
         sampler=sampler_config,
         embeddings=embedding_config,
+        tokenizer=tokenizer_config,
         vocab=vocab,
         gen=gen_config,
         adv=adv_config,
         checkpointing=checkpointing_config,
-        n_epochs=5000,
+        n_epochs=10000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )
@@ -466,12 +468,12 @@ if __name__ == "__main__":
     if not visdom.check_connection():
         visdom = None
 
-    checkpoint = torch.load("models/tempa-trunc2-5000.pth", weights_only=False)
-    checkpoint["config"].n_epochs = 10000
+    # checkpoint = torch.load("models/tempa-trunc2-5000.pth", weights_only=False)
+    # checkpoint["config"].n_epochs = 10000
 
-    # llnca = LLNCA(config=config, visdom=visdom)
-    llnca = LLNCA(
-        checkpoint=checkpoint,
-        visdom=visdom,
-    )
+    llnca = LLNCA(config=config, visdom=visdom)
+    # llnca = LLNCA(
+    #     checkpoint=checkpoint,
+    #     visdom=visdom,
+    # )
     llnca.train()

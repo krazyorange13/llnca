@@ -39,41 +39,41 @@ if __name__ == "__main__":
 
     llnca = LLNCA(
         checkpoint=torch.load(
-            path,
+            "models/tempa-tok2-500.pth",
             weights_only=False,
             map_location=torch.device("cpu"),
         )
     )
 
-    # llnca1 = LLNCA(
-    #     checkpoint=torch.load(
-    #         "models/alpha-c-mini-20000.pth",
-    #         weights_only=False,
-    #         map_location=torch.device("cpu"),
-    #     )
-    # )
-    # llnca2 = LLNCA(
-    #     checkpoint=torch.load(
-    #         path,
-    #         weights_only=False,
-    #         map_location=torch.device("cpu"),
-    #     )
-    # )
-    # embds1 = llnca1.embeddings.embeddings.weight
-    # embds2 = llnca2.embeddings.embeddings.weight
-    # diff = embds2 - embds1
-    # print("embds2 stats")
-    # print(embds2.detach())
-    # print("min", embds2.min().detach())
-    # print("max", embds2.max().detach())
-    # print("mean", embds2.mean().detach())
-    # print("std", embds2.std().detach())
-    # print("diff stats")
-    # print(diff)
-    # print("min", diff.min().detach())
-    # print("max", diff.max().detach())
-    # print("mean", diff.mean().detach())
-    # print("std", diff.std().detach())
+    llnca1 = LLNCA(
+        checkpoint=torch.load(
+            "models/tempa-tok2-1000.pth",
+            weights_only=False,
+            map_location=torch.device("cpu"),
+        )
+    )
+    llnca2 = LLNCA(
+        checkpoint=torch.load(
+            path,
+            weights_only=False,
+            map_location=torch.device("cpu"),
+        )
+    )
+    embds1 = llnca1.embeddings.embeddings.weight
+    embds2 = llnca2.embeddings.embeddings.weight
+    diff = embds2 - embds1
+    print("embds2 stats")
+    print(embds2.detach())
+    print("min", embds2.min().detach())
+    print("max", embds2.max().detach())
+    print("mean", embds2.mean().detach())
+    print("std", embds2.std().detach())
+    print("diff stats")
+    print(diff)
+    print("min", diff.min().detach())
+    print("max", diff.max().detach())
+    print("mean", diff.mean().detach())
+    print("std", diff.std().detach())
 
     while True:
         prev_layers = None

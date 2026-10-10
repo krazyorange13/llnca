@@ -307,7 +307,7 @@ class LLNCATokenizer:
         self.ivocab = {v: k for k, v in self.vocab.items() if isinstance(v, tuple)}
 
     def __len__(self):
-        return len(self.vocab)
+        return len(self.vocab)  # type: ignore
 
     def __del__(self):
         if self._encode_executor is not None:
@@ -315,9 +315,12 @@ class LLNCATokenizer:
 
 
 def main():
-    corp_path = "data/plato/platos-republic.corp.txt"
-    corptok_path = "data/plato/platos-republic.corptok.txt"
-    vocab_path = "data/plato/platos-republic.vocab.json"
+    # corp_path = "data/plato/platos-republic.corp.txt"
+    # corptok_path = "data/plato/platos-republic.corptok.txt"
+    # vocab_path = "data/plato/platos-republic.vocab.json"
+    corp_path = "data/ezpz2/ezpz2.corp.txt"
+    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
+    vocab_path = "data/ezpz2/ezpz2.vocab.json"
 
     print("loading text...", end=" ")
 

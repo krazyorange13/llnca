@@ -6,6 +6,7 @@ import torch
 from torch import nn
 
 from tokenizer import LLNCATokenizer
+from tokenizer2 import LLNCATokenizer2, LLNCATokenizer2Config
 
 
 @dataclass
@@ -76,17 +77,57 @@ class LLNCAEmbeddings:
         return self.embeddings.state_dict()
 
 
-if __name__ == "__main__":
-    # corp_path = "data/harv/harv.corp.txt"
-    # corptok_path = "data/harv/harv.corptok.txt"
-    vocab_path = "data/harv/harv.vocab.json"
+class LLNCAEmbeddings2:
+    def __init__(
+        self,
+        tokenizer: LLNCATokenizer2,
+        config: LLNCAEmbeddingsConfig,
+        debug: bool = False,
+    ):
+        self.tokenizer = tokenizer
+        self.config = config
 
-    tokenizer = LLNCATokenizer()
+        assert self.tokenizer.tokenizer
+
+        self.embeddings = nn.Embedding(
+            num_embeddings=len(self.tokenizer.tokenizer.vocab)
+            + len(self.tokenizer.tokenizer.special_tokens),
+            embedding_dim=self.config.n_dims,
+            padding_idx=self.tokenizer.get_special_tok("<pad>"),
+        )
+
+    def embed_from_tok(self, tok: int):
+        return self.embeddings(torch.tensor(tok, device=self.embeddings.weight.device))
+
+    def print_embed(self, tok: int):
+        with np.printoptions(linewidth=10000, precision=4, suppress=True):
+            embedding = self.embeddings.weight[tok].detach().numpy()
+            print(f"  \033[2m[{tok}]\t{embedding}\033[0m")
+
+    def print_embed_str(self, tok_str: str):
+        assert self.tokenizer.tokenizer
+        with np.printoptions(linewidth=10000, precision=4, suppress=True):
+            tok = self.tokenizer.tokenizer.encode(tok_str)[0]
+            embedding = self.embeddings.weight[tok].detach().numpy()
+            print(f"  \033[2m[{tok_str}]\t{embedding}\033[0m")
+
+    def load(self, state):
+        self.embeddings.load_state_dict(state)
+
+    def save(self):
+        return self.embeddings.state_dict()
+
+
+if __name__ == "__main__":
+    vocab_path = "data/plato/platos-republic.tokenizer.json"
+
+    config = LLNCATokenizer2Config()
+    tokenizer = LLNCATokenizer2(config=config)
     print("loading vocab...", end=" ")
-    with open(vocab_path, "r") as file:
-        tokenizer.load_vocab(json.load(file))
+    tokenizer.load(vocab_path)
     print(f"\033[2m{vocab_path}\033[0m")
 
     print("loading embeddings...")
     config = LLNCAEmbeddingsConfig(n_dims=16)
-    embedding = LLNCAEmbeddings(tokenizer=tokenizer, config=config, debug=True)
+    embedding = LLNCAEmbeddings2(tokenizer=tokenizer, config=config, debug=True)
+    embedding.print_embed(125)
