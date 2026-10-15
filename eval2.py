@@ -1,3 +1,4 @@
+import array
 import multiprocessing
 import queue
 import threading
@@ -31,6 +32,7 @@ from main import (
 )
 from nca import LLNCANCA, LLNCANCAConfig
 from tokenizer import LLNCATokenizer, LLNCAVocab
+from tokenizer2 import LLNCATokenizer2, LLNCATokenizer2Config, LLNCAVocab2
 
 
 class LLNCAProcessManager:
@@ -148,11 +150,25 @@ class LLNCAProcess:
         self.process_stop_event.clear()
         self.process.start()
 
-        self.window_id = self.id + "_window"
-        with dpg.window(tag=self.window_id, label=self.model_path):  # type: ignore
+        with dpg.texture_registry():  # type: ignore
+            dpg.add_raw_texture(
+                width=1,
+                height=1,
+                default_value=[0.0, 0.0, 0.0],
+                format=dpg.mvFormat_Float_rgb,
+                tag=self.id + "_frame_tex",
+            )
+
+        with dpg.window(tag=self.id + "_window", label=self.model_path):  # type: ignore
             dpg.add_text("", tag=self.id + "_x_str")
             dpg.add_text("", tag=self.id + "_y_str")
             dpg.add_text("", tag=self.id + "_frame")
+            dpg.add_image(
+                texture_tag=self.id + "_frame_tex", tag=self.id + "_frame_img"
+            )
+
+        with dpg.window(tag=self.id + "_window2", label=self.model_path + "embeddings"):  # type: ignore
+            pass
 
         self.thread.start()
 
@@ -180,12 +196,40 @@ class LLNCAProcess:
                 frame = frames.get(timeout=LLNCAProcess.POLL_RATE)
             except queue.Empty:
                 continue
-            dpg.set_value(self.id + "_x_str", frame["x_str"])
-            dpg.set_value(self.id + "_y_str", frame["y_str"])
-            dpg.set_value(self.id + "_frame", frame["frame"])
-            if frame["frame"] != prev_frame:
-                time.sleep(LLNCAProcess.FRAME_RATE)
-            prev_frame = frame["frame"]
+
+            if frame["type"] == "frame":
+                dpg.set_value(self.id + "_x_str", frame["data"]["x_str"])
+                dpg.set_value(self.id + "_y_str", frame["data"]["y_str"])
+                dpg.set_value(self.id + "_frame", frame["data"]["frame"])
+                if dpg.does_item_exist(self.id + "_frame_tex"):
+                    dpg.set_value(self.id + "_frame_tex", frame["data"]["frame_raw"])
+                if frame["data"]["frame"] != prev_frame:
+                    time.sleep(LLNCAProcess.FRAME_RATE)
+                prev_frame = frame["data"]["frame"]
+
+            elif frame["type"] == "update":
+                frame_img_width = frame["data"]["width"]
+                frame_img_height = frame["data"]["height"]
+
+                frame_img_lst = [0.0] * (frame_img_width * frame_img_height * 3)
+
+                dpg.delete_item(self.id + "_frame_img")
+                dpg.delete_item(self.id + "_frame_tex")
+                with dpg.texture_registry():  # type: ignore
+                    dpg.add_raw_texture(
+                        width=frame_img_width,
+                        height=frame_img_height,
+                        default_value=frame_img_lst,
+                        format=dpg.mvFormat_Float_rgb,
+                        tag=self.id + "_frame_tex",
+                    )
+                dpg.add_image(
+                    width=frame_img_width,
+                    height=frame_img_height,
+                    texture_tag=self.id + "_frame_tex",
+                    tag=self.id + "_frame_img",
+                    parent=self.id + "_window",
+                )
 
     @staticmethod
     def process_run(
@@ -194,17 +238,41 @@ class LLNCAProcess:
         inputs: multiprocessing.Queue,
         frames: multiprocessing.Queue,
     ):
+        def xs_to_img(xs: torch.Tensor):
+            xs_img = xs.squeeze().unsqueeze(-1)
+            xs_img = xs_img.repeat_interleave(upscale, dim=0).repeat_interleave(
+                upscale, dim=1
+            )
+            w = xs_img.shape[1]
+            h = xs_img.shape[0]
+            xs_img = xs_img.expand(-1, -1, 3).contiguous().flatten().numpy()
+            return w, h, xs_img
+
         checkpoint = torch.load(
             model_path, weights_only=False, map_location=torch.device("cpu")
         )
         llnca = LLNCA(checkpoint=checkpoint)
+        upscale = 10
 
         x_str = ""
         xs = None
+        prev_time = time.perf_counter()
+        curr_time = time.perf_counter()
+        target_time = 1.0 / 60.0
         while not stop_event.is_set():
             try:
                 x_str = inputs.get(timeout=LLNCAProcess.POLL_RATE)
                 xs = llnca.eval_start([x_str])
+                w, h, _ = xs_to_img(xs)
+                frames.put(
+                    {
+                        "type": "update",
+                        "data": {
+                            "width": w,
+                            "height": h,
+                        },
+                    }
+                )
             except queue.ShutDown:
                 break
             except queue.Empty:
@@ -215,14 +283,29 @@ class LLNCAProcess:
 
             xs, y_pred = llnca.eval_step(xs)
             frame = llnca.tokenizer.decode(y_pred[0])
+            _, _, xs_img = xs_to_img(xs)
 
             try:
                 frames.put(
-                    {"x_str": x_str, "y_str": x_str, "frame": frame},
+                    {
+                        "type": "frame",
+                        "data": {
+                            "x_str": x_str,
+                            "y_str": x_str,
+                            "frame": frame,
+                            "frame_raw": xs_img,
+                        },
+                    },
                     timeout=LLNCAProcess.POLL_RATE,
                 )
             except queue.ShutDown:
                 break
+
+            curr_time = time.perf_counter()
+            diff_time = curr_time - prev_time
+            if diff_time < target_time:
+                time.sleep(target_time - diff_time)
+            prev_time = curr_time
 
     def get_state_desc(self):
         stopping = self.process_stop_event.is_set()
