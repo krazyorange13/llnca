@@ -172,7 +172,9 @@ class LLNCA:
             self.adv_scheduler.load_state_dict(checkpoint["adv_scheduler"])
             self.curr_epoch = checkpoint["curr_epoch"]
 
-        self.scaler = torch.amp.GradScaler("cuda", enabled=(self.device.type == "cuda"))
+        self.scaler = torch.amp.GradScaler(
+            "cuda", enabled=(self.device.type == "cuda" and False)
+        )
 
     def get_state(self):
         state = {
@@ -225,7 +227,9 @@ class LLNCA:
                 n_steps = random.randint(
                     self.config.gen.steps[0], self.config.gen.steps[1]
                 )
-                with torch.amp.autocast("cuda", enabled=(self.device.type == "cuda")):
+                with torch.amp.autocast(
+                    "cuda", enabled=(self.device.type == "cuda" and False)
+                ):
                     xs, ys = self.tok_to_embed(x, y)
                     xs = self.gen_nca.add_channels(xs)
                     ys_pred = self.gen_nca(xs, steps=n_steps)
@@ -241,6 +245,7 @@ class LLNCA:
             self.gen_scheduler.step()
 
             loss_avg = loss_acc / len(self.dataloader)
+            loss_avg = loss_avg.cpu()
             if self.visdom:
                 name = self.get_name()
                 if epoch_i == 0:
@@ -407,7 +412,7 @@ if __name__ == "__main__":
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
             channels=16,
-            mlp_width=32,
+            mlp_width=48,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -425,7 +430,7 @@ if __name__ == "__main__":
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
             channels=16,
-            mlp_width=32,
+            mlp_width=48,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -441,8 +446,8 @@ if __name__ == "__main__":
     )
 
     checkpointing_config = LLNCACheckpointingConfig(
-        major_name="tempa",
-        minor_name="trunc2",
+        major_name="temp",
+        minor_name="backsony",
         folder="models",
         freq=500,
     )
@@ -466,12 +471,12 @@ if __name__ == "__main__":
     if not visdom.check_connection():
         visdom = None
 
-    checkpoint = torch.load("models/tempa-trunc2-5000.pth", weights_only=False)
-    checkpoint["config"].n_epochs = 10000
+    # checkpoint = torch.load("models/tempa-trunc2-5000.pth", weights_only=False)
+    # checkpoint["config"].n_epochs = 10000
 
-    # llnca = LLNCA(config=config, visdom=visdom)
-    llnca = LLNCA(
-        checkpoint=checkpoint,
-        visdom=visdom,
-    )
+    llnca = LLNCA(config=config, visdom=visdom)
+    # llnca = LLNCA(
+    #     checkpoint=checkpoint,
+    #     visdom=visdom,
+    # )
     llnca.train()
