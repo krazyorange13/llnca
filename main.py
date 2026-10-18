@@ -98,8 +98,8 @@ class LLNCA:
 
         self.visdom = visdom
 
-        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.device = torch.device("cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # self.device = torch.device("cpu")
 
         _epoch_str = ("-" + str(checkpoint["curr_epoch"] + 1)) if checkpoint else ""
         print(f"loading {self.get_name()}{_epoch_str}...", end=" ")
