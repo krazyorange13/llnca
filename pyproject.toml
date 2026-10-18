@@ -7,20 +7,25 @@ requires-python = ">=3.13"
 dependencies = [
     "bpeasy>=0.1.6",
     "dearpygui>=2.3.1",
+    "lion-pytorch>=0.2.5",
     "nbformat>=5.11.1",
     "numpy>=2.5.2",
     "torch>=2.13.0",
+    "pytorch-triton-rocm ; sys_platform == 'linux'",
+    "triton-rocm ; sys_platform == 'linux'",
     "tqdm>=4.69.1",
     "visdom>=0.2.4",
 ]
 
 [[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.2"
 explicit = true
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu" }]
+torch = [{ index = "pytorch-rocm", marker = "sys_platform == 'linux'" }]
+pytorch-triton-rocm = [{ index = "pytorch-rocm", marker = "sys_platform == 'linux'" }]
+triton-rocm = [{ index = "pytorch-rocm", marker = "sys_platform == 'linux'" }]
 
 [tool.uv.extra-build-dependencies]
 visdom = ["setuptools<=80.10.2"]
