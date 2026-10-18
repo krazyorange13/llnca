@@ -191,7 +191,7 @@ if __name__ == "__main__":
 
     config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],
-        max_token_length=128,
+        max_token_length=16,
     )
     tokenizer = LLNCATokenizer2(config=config)
     tokenizer.train(corp_path)

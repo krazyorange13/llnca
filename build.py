@@ -124,6 +124,7 @@ requirements = get_pyproject_reqs("pyproject.toml")
 files = [
     "corpus.py",
     "tokenizer.py",
+    "tokenizer2.py",
     "dataset.py",
     "embedding.py",
     "nca.py",
@@ -132,7 +133,7 @@ files = [
 ]
 build_notebook(
     requirements=[],
-    pre_file="prebuild.py",
+    pre_file="prebuild.sh",
     in_files=files,
     out_file="build.ipynb",
 )

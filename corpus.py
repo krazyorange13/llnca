@@ -34,7 +34,7 @@ class LLNCACorpus:
 
         contents = re.sub(r"\s+", " ", contents)
         if sentences:
-            contents = re.sub(r"[.!?]\s+", ".\n", contents)
+            contents = re.sub(r"([.!?])\s+", r"\1\n", contents)
 
         with open(out_file, "w") as file:
             file.write(contents)

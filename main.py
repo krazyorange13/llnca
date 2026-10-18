@@ -26,6 +26,9 @@ from embedding import LLNCAEmbeddings2, LLNCAEmbeddingsConfig
 from nca import LLNCANCA, LLNCANCAConfig
 from tokenizer2 import LLNCATokenizer2, LLNCATokenizer2Config, LLNCAVocab2
 
+# torch.backends.cuda.enable_flash_sdp(False)
+# torch.backends.cuda.enable_mem_efficient_sdp(False)
+
 
 @dataclass
 class LLNCAOptimConfig:
@@ -95,7 +98,8 @@ class LLNCA:
 
         self.visdom = visdom
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cpu")
 
         _epoch_str = ("-" + str(checkpoint["curr_epoch"] + 1)) if checkpoint else ""
         print(f"loading {self.get_name()}{_epoch_str}...", end=" ")
@@ -143,6 +147,13 @@ class LLNCA:
             betas=gen_optim_conf.betas,
             weight_decay=gen_optim_conf.weight_decay,
         )
+        # self.gen_optim = Lion(
+        #     list(self.gen_nca.parameters())
+        #     + list(self.embeddings.embeddings.parameters()),
+        #     lr=gen_optim_conf.lr / 5,
+        #     betas=gen_optim_conf.betas,
+        #     weight_decay=gen_optim_conf.weight_decay * 5,
+        # )
         print("\033[2mgen_optim\033[0m ", end=" ")
 
         self.adv_optim = optim.AdamW(
@@ -177,7 +188,9 @@ class LLNCA:
             self.adv_scheduler.load_state_dict(checkpoint["adv_scheduler"])
             self.curr_epoch = checkpoint["curr_epoch"]
 
-        self.scaler = torch.amp.GradScaler("cuda", enabled=(self.device.type == "cuda"))
+        self.scaler = torch.amp.GradScaler(
+            "cuda", enabled=(self.device.type == "cuda" and False)
+        )
 
     def get_state(self):
         state = {
@@ -230,7 +243,9 @@ class LLNCA:
                 n_steps = random.randint(
                     self.config.gen.steps[0], self.config.gen.steps[1]
                 )
-                with torch.amp.autocast("cuda", enabled=(self.device.type == "cuda")):
+                with torch.amp.autocast(
+                    "cuda", enabled=(self.device.type == "cuda" and False)
+                ):
                     xs, ys = self.tok_to_embed(x, y)
                     xs = self.gen_nca.add_channels(xs)
                     ys_pred = self.gen_nca(xs, steps=n_steps)
@@ -246,6 +261,7 @@ class LLNCA:
             self.gen_scheduler.step()
 
             loss_avg = loss_acc / len(self.dataloader)
+            loss_avg = loss_avg.cpu()
             if self.visdom:
                 name = self.get_name()
                 if epoch_i == 0:
@@ -339,9 +355,8 @@ class LLNCA:
         return strs
 
     def tok_to_embed(self, x_strs: list[str], y_strs: list[str]):
-        bin_size = self.config.sampler.bin_interval
         max_len = max(max(len(s) for s in x_strs), max(len(s) for s in y_strs))
-        pad_len = math.ceil(max_len / bin_size) * bin_size
+        pad_len = self.get_padded_embed_len(max_len)
 
         x_idxs = [
             self.tokenizer._decode_toks(x_str)
@@ -361,6 +376,10 @@ class LLNCA:
         ys = self.embeddings.embeddings(y_idx_tensor).permute(0, 2, 1)
 
         return xs, ys
+
+    def get_padded_embed_len(self, x_len: int):
+        bin_size = self.config.sampler.bin_interval
+        return math.ceil(x_len / bin_size) * bin_size
 
     def nearest_embed(self, x: torch.Tensor):
         w = self.embeddings.embeddings.weight
@@ -395,20 +414,20 @@ if __name__ == "__main__":
         shuffle=True,
     )
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=8,
+        n_dims=16,
     )
 
     tokenizer_config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],
-        max_token_length=4,
+        max_token_length=128,
     )
     with open(vocab_path) as file:
         vocab = json.load(file)
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=24,
-            mlp_width=64,
+            channels=32,
+            mlp_width=96,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -443,7 +462,7 @@ if __name__ == "__main__":
 
     checkpointing_config = LLNCACheckpointingConfig(
         major_name="temp",
-        minor_name="tok2",
+        minor_name="sonion-tkl4",
         folder="models",
         freq=500,
     )
@@ -458,7 +477,7 @@ if __name__ == "__main__":
         gen=gen_config,
         adv=adv_config,
         checkpointing=checkpointing_config,
-        n_epochs=10000,
+        n_epochs=5000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )

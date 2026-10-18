@@ -57,6 +57,10 @@ class LLNCANCA(nn.Module):
         for _ in range(self.config.mlp_depth - 2):
             layers.append(nn.Conv1d(mlp_width, mlp_width, kernel_size=1))
             layers.append(activation_fn())
+        # for _ in range(self.config.mlp_depth - 2):
+        #     layers.append(activation_fn())
+        #     layers.append(nn.Conv1d(mlp_width, mlp_width, kernel_size=1))
+        # layers.append(activation_fn())
         layers.append(nn.Conv1d(mlp_width, self.config.channels, kernel_size=1))
 
         self.seq = nn.Sequential(*layers)

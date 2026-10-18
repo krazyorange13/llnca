@@ -2,7 +2,8 @@
 
 ### developmental
 
-- [ ] use new embeddings2
+- [ ] overhaul eval2.py for eval3.py
+- [x] use new embeddings2
 - [ ] merge tokenizer2.py into tokenizer.py
 - [ ] implement config diffs (smth | None = None)
 - [ ] implement config viewing (eval2.py)

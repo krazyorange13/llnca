@@ -93,7 +93,7 @@ class LLNCAEmbeddings2:
             num_embeddings=len(self.tokenizer.tokenizer.vocab)
             + len(self.tokenizer.tokenizer.special_tokens),
             embedding_dim=self.config.n_dims,
-            padding_idx=self.tokenizer.get_special_tok("<pad>"),
+            # padding_idx=self.tokenizer.get_special_tok("<pad>"),
         )
 
     def embed_from_tok(self, tok: int):
