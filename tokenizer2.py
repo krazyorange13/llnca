@@ -7,15 +7,17 @@ from bpeasy.tokenizer import BPEasyTokenizer
 
 # version of bpeasy.tokenizer._DEFAULT_REGEX_PATTERN
 # that creates hard breaks wherever there's newlines
+
 _NO_NEWLINE_REGEX_PATTERN = (
     r"""[\r\n]+|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 )
+_NO_NEWLINE_YES_PUNCTUATION_REGEX_PATTERN = r"""[\r\n]+|[^\r\n\p{L}\p{N}]?\p{L}+[.!?;:]*|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
 
 @dataclass
 class LLNCATokenizer2Config:
     name: str = ""
-    regex_pattern: str = _NO_NEWLINE_REGEX_PATTERN
+    regex_pattern: str = _NO_NEWLINE_YES_PUNCTUATION_REGEX_PATTERN
     special_tokens: list[str] = field(default_factory=list)
     vocab_size: int = 32000
     max_token_length: int = 128

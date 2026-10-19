@@ -1,3 +1,4 @@
+import functools
 import json
 import math
 import random
@@ -28,6 +29,25 @@ from tokenizer2 import LLNCATokenizer2, LLNCATokenizer2Config, LLNCAVocab2
 
 # torch.backends.cuda.enable_flash_sdp(False)
 # torch.backends.cuda.enable_mem_efficient_sdp(False)
+
+
+def log(folder: str = "", prefix: str = ""):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # _args = [arg if not isinstance(arg) for arg in args]
+            # input = {"args": args, "kwargs": kwargs}
+            print(func.__name__, args, kwargs)
+            output = func(*args, **kwargs)
+            print(f"\t\t{len(output)}")
+            # print(f"\t\t{repr(output)[:200]}")
+            # with open(f"{folder}/{prefix}-{func.__name__}", "w") as f:
+            #     pass
+            return output
+
+        return wrapper
+
+    return decorator
 
 
 @dataclass
@@ -235,6 +255,7 @@ class LLNCA:
             leave=False,
             dynamic_ncols=True,
             unit="epoch",
+            smoothing=0.7,
         ):
             self.curr_epoch = epoch_i
             loss_acc = torch.tensor(0.0, device=self.device)
@@ -246,11 +267,15 @@ class LLNCA:
                 with torch.amp.autocast(
                     "cuda", enabled=(self.device.type == "cuda" and False)
                 ):
-                    xs, ys = self.tok_to_embed(x, y)
+                    xs, ys, y_idxs = self.tok_to_embed(x, y)
                     xs = self.gen_nca.add_channels(xs)
                     ys_pred = self.gen_nca(xs, steps=n_steps)
                     ys_pred = ys_pred[:, : self.config.embeddings.n_dims, :]
-                    loss = F.l1_loss(ys_pred, ys.detach())
+                    logits = self.embeddings.get_logits(ys_pred)
+                    loss = F.cross_entropy(
+                        logits.reshape(-1, logits.shape[-1]), y_idxs.reshape(-1)
+                    )
+                    # loss = F.l1_loss(ys_pred, ys.detach())
 
                 loss_acc += loss.detach()
                 self.scaler.scale(loss).backward()
@@ -302,13 +327,13 @@ class LLNCA:
         self.adv_nca.eval()
         for x, y in self.dataloader:
             n_steps = (self.config.gen.steps[0] + self.config.gen.steps[1]) // 2
-            xs, ys = self.tok_to_embed(x, y)
+            xs, ys, _ = self.tok_to_embed(x, y)
             xs = self.gen_nca.add_channels(xs)
             y_pred = y
             for _ in range(n_steps):
                 xs = self.gen_nca(xs, steps=1)
                 ys_pred = xs[:, : self.config.embeddings.n_dims, :]
-                idxs, _ = self.nearest_embed(ys_pred)
+                idxs = self.nearest_embed(ys_pred)
                 y_pred = self.reconstruct_str(idxs)
                 yield x[0], y[0], xs[0], y_pred[0]
 
@@ -318,12 +343,12 @@ class LLNCA:
         self.gen_nca.eval()
         self.adv_nca.eval()
         n_steps = (self.config.gen.steps[0] + self.config.gen.steps[1]) // 2
-        xs, _ = self.tok_to_embed([x], [])
+        xs, _, _ = self.tok_to_embed([x], [])
         xs = self.gen_nca.add_channels(xs)
         for _ in range(n_steps):
             xs = self.gen_nca(xs, steps=1)
             ys_pred = xs[:, : self.config.embeddings.n_dims, :]
-            idxs, _ = self.nearest_embed(ys_pred)
+            idxs = self.nearest_embed(ys_pred)
             y_pred = self.reconstruct_str(idxs)
             yield xs[0], y_pred[0]
 
@@ -332,7 +357,7 @@ class LLNCA:
         x = [self.tokenizer.encode(s) for s in x]
         self.gen_nca.eval()
         self.adv_nca.eval()
-        xs, _ = self.tok_to_embed(x, [""])
+        xs, _, _ = self.tok_to_embed(x, [""])
         xs = self.gen_nca.add_channels(xs)
         return xs
 
@@ -342,7 +367,7 @@ class LLNCA:
         self.adv_nca.eval()
         xs = self.gen_nca(xs, steps=1)
         ys_pred = xs[:, : self.config.embeddings.n_dims, :]
-        idxs, _ = self.nearest_embed(ys_pred)
+        idxs = self.nearest_embed(ys_pred)
         y_pred = self.reconstruct_str(idxs)
         return xs, y_pred
 
@@ -360,12 +385,12 @@ class LLNCA:
 
         x_idxs = [
             self.tokenizer._decode_toks(x_str)
-            + [self.tokenizer.get_special_tok("<pad>")] * (pad_len - len(x_str))
+            + [self.embeddings.pad_tok] * (pad_len - len(x_str))
             for x_str in x_strs
         ]
         y_idxs = [
             self.tokenizer._decode_toks(y_str)
-            + [self.tokenizer.get_special_tok("<pad>")] * (pad_len - len(y_str))
+            + [self.embeddings.pad_tok] * (pad_len - len(y_str))
             for y_str in y_strs
         ]
 
@@ -375,21 +400,23 @@ class LLNCA:
         xs = self.embeddings.embeddings(x_idx_tensor).permute(0, 2, 1)
         ys = self.embeddings.embeddings(y_idx_tensor).permute(0, 2, 1)
 
-        return xs, ys
+        return xs, ys, y_idx_tensor
 
     def get_padded_embed_len(self, x_len: int):
         bin_size = self.config.sampler.bin_interval
         return math.ceil(x_len / bin_size) * bin_size
 
     def nearest_embed(self, x: torch.Tensor):
-        w = self.embeddings.embeddings.weight
-        x = x.permute(0, 2, 1)
-        x_norm = F.normalize(x, p=2, dim=-1)
-        w_norm = F.normalize(w, p=2, dim=-1)
-        cosine = torch.matmul(x_norm, w_norm.T)
-        idxs = torch.argmax(cosine, dim=-1)
-        y = self.embeddings.embeddings(idxs).permute(0, 2, 1)
-        return idxs, y
+        return self.embeddings.get_logits(x).argmax(dim=-1)
+        # return idxs
+        # w = self.embeddings.embeddings.weight
+        # x = x.permute(0, 2, 1)
+        # x_norm = F.normalize(x, p=2, dim=-1)
+        # w_norm = F.normalize(w, p=2, dim=-1)
+        # cosine = torch.matmul(x_norm, w_norm.T)
+        # idxs = torch.argmax(cosine, dim=-1)
+        # y = self.embeddings.embeddings(idxs).permute(0, 2, 1)
+        # return idxs, y
 
 
 if __name__ == "__main__":
@@ -414,20 +441,20 @@ if __name__ == "__main__":
         shuffle=True,
     )
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=16,
+        n_dims=8,
     )
 
     tokenizer_config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],
-        max_token_length=128,
+        max_token_length=16,
     )
     with open(vocab_path) as file:
         vocab = json.load(file)
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=32,
-            mlp_width=96,
+            channels=16,
+            mlp_width=48,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -445,7 +472,7 @@ if __name__ == "__main__":
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
             channels=16,
-            mlp_width=32,
+            mlp_width=48,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -457,12 +484,12 @@ if __name__ == "__main__":
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
-        steps=(20, 30),
+        steps=(10, 20),
     )
 
     checkpointing_config = LLNCACheckpointingConfig(
         major_name="temp",
-        minor_name="sonion-tkl4",
+        minor_name="logitson",
         folder="models",
         freq=500,
     )

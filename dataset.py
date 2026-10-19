@@ -18,7 +18,7 @@ class LLNCADataset(Dataset):
         self.load()
 
     def load(self):
-        with open(self.config.file, encoding="utf-8", newline="") as file:
+        with open(self.config.file) as file:
             lines = file.readlines()
         lines = [line.rstrip("\n") for line in lines]
         for i in range(0, len(lines), 2):

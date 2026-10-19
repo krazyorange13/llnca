@@ -75,15 +75,21 @@ if __name__ == "__main__":
     # print("mean", diff.mean().detach())
     # print("std", diff.std().detach())
 
+    n_steps = (llnca.config.gen.steps[0] + llnca.config.gen.steps[1]) // 2
+    print(n_steps)
+
     while True:
         prev_layers = None
         prev_frame = ""
-        for x, y, xs, frame in llnca.eval():
+        for i, (x, y, xs, frame) in enumerate(llnca.eval()):
             x_str = llnca.tokenizer.decode(x)
             y_str = llnca.tokenizer.decode(y)
             target_str = f"[\033[2m{y_str[: len(x_str)]}\033[0m{y_str[len(x_str) :]}]"
             frame_str = llnca.tokenizer.decode(frame)
+            frame_str = frame_str.replace("<pad>", " ")
             print("\33[2K\r" + f"{target_str} {frame_str}", end="", flush=True)
-            if prev_frame != frame_str:
-                time.sleep(0.25)
+            # if prev_frame != frame_str:
+            # time.sleep(0.5)
+            if (i + 1) % n_steps == 0:
+                time.sleep(0.75)
             prev_frame = frame_str

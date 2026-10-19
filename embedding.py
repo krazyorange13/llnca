@@ -89,12 +89,17 @@ class LLNCAEmbeddings2:
 
         assert self.tokenizer.tokenizer
 
+        self.pad_tok = self.tokenizer.get_special_tok("<pad>")
         self.embeddings = nn.Embedding(
             num_embeddings=len(self.tokenizer.tokenizer.vocab)
             + len(self.tokenizer.tokenizer.special_tokens),
             embedding_dim=self.config.n_dims,
-            # padding_idx=self.tokenizer.get_special_tok("<pad>"),
+            padding_idx=self.pad_tok,
         )
+
+    def get_logits(self, x: torch.Tensor):
+        w = self.embeddings.weight
+        return torch.einsum("bdw,vd->bwv", x, w)
 
     def embed_from_tok(self, tok: int):
         return self.embeddings(torch.tensor(tok, device=self.embeddings.weight.device))

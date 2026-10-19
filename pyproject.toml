@@ -15,6 +15,9 @@ dependencies = [
     "triton-rocm ; sys_platform == 'linux'",
     "tqdm>=4.69.1",
     "visdom>=0.2.4",
+    "scikit-learn>=1.9.1",
+    "pandas>=3.0.6",
+    "plotly>=7.1.0",
 ]
 
 [[tool.uv.index]]

@@ -245,7 +245,7 @@ class LLNCAProcess:
             )
             w = xs_img.shape[1]
             h = xs_img.shape[0]
-            xs_img = xs_img.expand(-1, -1, 3).contiguous().flatten().numpy()
+            xs_img = xs_img.expand(-1, -1, 3).contiguous().flatten().cpu().numpy()
             return w, h, xs_img
 
         checkpoint = torch.load(
