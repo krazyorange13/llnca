@@ -3,6 +3,7 @@ import plotly.express as px
 import torch
 import torch.nn
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 
 from corpus import (
     LLNCACorpus,
@@ -30,7 +31,7 @@ from tokenizer import LLNCATokenizer, LLNCAVocab
 from tokenizer2 import LLNCATokenizer2, LLNCATokenizer2Config, LLNCAVocab2
 
 if __name__ == "__main__":
-    path = "../llnca/models/temp-nonewline-sondfdsfsda-4000.pth"
+    path = "models/harv-beta-3000.pth"
 
     llnca = LLNCA(
         checkpoint=torch.load(
@@ -42,8 +43,16 @@ if __name__ == "__main__":
 
     embedding_weights = llnca.embeddings.embeddings.weight.detach().cpu().numpy()
 
-    pca = PCA(n_components=3)
-    pca_results = pca.fit_transform(embedding_weights)
+    # pca = PCA(n_components=3)
+    # pca_results = pca.fit_transform(embedding_weights)
+
+    tnse = TSNE(
+        n_components=3,
+        perplexity=15,
+        random_state=42,
+        learning_rate="auto",
+    )
+    tsne_results = tnse.fit_transform(embedding_weights)
 
     vocab = []
 
@@ -53,7 +62,7 @@ if __name__ == "__main__":
         for i in range(len(llnca.tokenizer.tokenizer.vocab) + 1)
     ]
 
-    df = pd.DataFrame(pca_results, columns=["pca1", "pca2", "pca3"])
+    df = pd.DataFrame(tsne_results, columns=["pca1", "pca2", "pca3"])
     df["token"] = vocab
     df["mag"] = (
         torch.norm(llnca.embeddings.embeddings.weight, dim=1).detach().cpu().numpy()

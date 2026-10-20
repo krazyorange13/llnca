@@ -17,7 +17,7 @@ _NO_NEWLINE_YES_PUNCTUATION_REGEX_PATTERN = r"""[\r\n]+|[^\r\n\p{L}\p{N}]?\p{L}+
 @dataclass
 class LLNCATokenizer2Config:
     name: str = ""
-    regex_pattern: str = _NO_NEWLINE_YES_PUNCTUATION_REGEX_PATTERN
+    regex_pattern: str = _NO_NEWLINE_REGEX_PATTERN
     special_tokens: list[str] = field(default_factory=list)
     vocab_size: int = 32000
     max_token_length: int = 128
@@ -187,25 +187,24 @@ if __name__ == "__main__":
     # corp_path = "data/plato/platos-republic.corp.txt"
     # corptok_path = "data/plato/platos-republic.corptok.txt"
     # tokenizer_path = "data/plato/platos-republic.tokenizer.json"
-    corp_path = "data/ezpz2/ezpz2.corp.txt"
-    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
-    tokenizer_path = "data/ezpz2/ezpz2.tokenizer.json"
+    corp_path = "data/harv/harv.corp.txt"
+    corptok_path = "data/harv/harv.corptok.txt"
+    tokenizer_path = "data/harv/harv.tokenizer.json"
 
     config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],
-        max_token_length=16,
+        max_token_length=4,
     )
     tokenizer = LLNCATokenizer2(config=config)
     tokenizer.train(corp_path)
     tokenizer.encode_file(corp_path, corptok_path)
     tokenizer.save(tokenizer_path)
 
-    print(
-        enc := tokenizer.encode(
-            "mathematician<pad><pad><pad>", allowed_special={"<pad>"}
-        )
-    )
-    print(tokenizer.decode(enc))
-
+    # print(
+    #     enc := tokenizer.encode(
+    #         "mathematician<pad><pad><pad>", allowed_special={"<pad>"}
+    #     )
+    # )
+    # print(tokenizer.decode(enc))
     print(padtok := tokenizer.get_special_tok("<pad>"))
-    print(tokenizer.decode([padtok]))
+    # print(tokenizer.decode([padtok]))

@@ -420,8 +420,8 @@ class LLNCA:
 
 
 if __name__ == "__main__":
-    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
-    vocab_path = "data/ezpz2/ezpz2.tokenizer.json"
+    corptok_path = "data/harv/harv.corptok.txt"
+    vocab_path = "data/harv/harv.tokenizer.json"
 
     corpus_config = LLNCACorpusConfig(
         LLNCACorpusSlidingConfig(
@@ -441,20 +441,20 @@ if __name__ == "__main__":
         shuffle=True,
     )
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=8,
+        n_dims=24,
     )
 
     tokenizer_config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],
-        max_token_length=16,
+        max_token_length=4,
     )
     with open(vocab_path) as file:
         vocab = json.load(file)
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=16,
-            mlp_width=48,
+            channels=48,
+            mlp_width=144,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -462,7 +462,7 @@ if __name__ == "__main__":
         ),
         LLNCAOptimConfig(
             lr=1e-3,
-            lr_gamma=0.99999,
+            lr_gamma=0.999995,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -471,8 +471,8 @@ if __name__ == "__main__":
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=16,
-            mlp_width=48,
+            channels=48,
+            mlp_width=144,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -480,18 +480,18 @@ if __name__ == "__main__":
         ),
         LLNCAOptimConfig(
             lr=1e-3,
-            lr_gamma=0.99999,
+            lr_gamma=0.999995,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
-        steps=(10, 20),
+        steps=(20, 30),
     )
 
     checkpointing_config = LLNCACheckpointingConfig(
-        major_name="temp",
-        minor_name="logitson",
+        major_name="harv",
+        minor_name="beta",
         folder="models",
-        freq=500,
+        freq=250,
     )
 
     config = LLNCAConfig(
@@ -504,17 +504,17 @@ if __name__ == "__main__":
         gen=gen_config,
         adv=adv_config,
         checkpointing=checkpointing_config,
-        n_epochs=5000,
+        n_epochs=100000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )
 
-    # visdom = Visdom(server="https://visdom.krazyorange.dev", port=443)
-    visdom = Visdom(server="localhost", port=8097)
+    visdom = Visdom(server="https://visdom.krazyorange.dev", port=443)
+    # visdom = Visdom(server="localhost", port=8097)
     if not visdom.check_connection():
         visdom = None
 
-    # checkpoint = torch.load("models/tempa-trunc2-5000.pth", weights_only=False)
+    # checkpoint = torch.load("models/harv-beta-3000.pth", weights_only=False)
     # checkpoint["config"].n_epochs = 10000
 
     llnca = LLNCA(config=config, visdom=visdom)
