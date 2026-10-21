@@ -31,7 +31,7 @@ from tokenizer import LLNCATokenizer, LLNCAVocab
 from tokenizer2 import LLNCATokenizer2, LLNCATokenizer2Config, LLNCAVocab2
 
 if __name__ == "__main__":
-    path = "models/harv-beta-3000.pth"
+    path = "models/harv-beta-15000.pth"
 
     llnca = LLNCA(
         checkpoint=torch.load(

@@ -446,7 +446,7 @@ if __name__ == "__main__":
 
     tokenizer_config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],
-        max_token_length=4,
+        max_token_length=6,
     )
     with open(vocab_path) as file:
         vocab = json.load(file)
@@ -489,7 +489,7 @@ if __name__ == "__main__":
 
     checkpointing_config = LLNCACheckpointingConfig(
         major_name="harv",
-        minor_name="beta",
+        minor_name="beta-tkl6",
         folder="models",
         freq=250,
     )
