@@ -446,7 +446,7 @@ if __name__ == "__main__":
 
     tokenizer_config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],
-        max_token_length=6,
+        max_token_length=4,
     )
     with open(vocab_path) as file:
         vocab = json.load(file)
@@ -461,7 +461,7 @@ if __name__ == "__main__":
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
-            lr=1e-3,
+            lr=3e-4,
             lr_gamma=0.999995,
             weight_decay=0.01,
             betas=(0.9, 0.95),
@@ -479,7 +479,7 @@ if __name__ == "__main__":
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
-            lr=1e-3,
+            lr=3e-4,
             lr_gamma=0.999995,
             weight_decay=0.01,
             betas=(0.9, 0.95),
@@ -489,7 +489,7 @@ if __name__ == "__main__":
 
     checkpointing_config = LLNCACheckpointingConfig(
         major_name="harv",
-        minor_name="beta-tkl6",
+        minor_name="beta-lr3",
         folder="models",
         freq=250,
     )
