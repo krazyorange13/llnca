@@ -60,6 +60,12 @@ class LLNCATokenizer2:
                 self.config.name,
                 self.config.batch_size,
             )
+        self.vocab_arr = self._get_vocab()
+
+    def _get_vocab(self):
+        if self.tokenizer is None:
+            return []
+        return [repr(self.decode([i])) for i in range(len(self.tokenizer.vocab) + 1)]
 
     def encode(
         self,
@@ -181,15 +187,19 @@ class LLNCATokenizer2:
             special_tokens=data["special_tokens"],
         )
         self.tokenizer = instance
+        self.vocab_arr = self._get_vocab()
 
 
 if __name__ == "__main__":
     # corp_path = "data/plato/platos-republic.corp.txt"
     # corptok_path = "data/plato/platos-republic.corptok.txt"
     # tokenizer_path = "data/plato/platos-republic.tokenizer.json"
-    corp_path = "data/harv/harv.corp.txt"
-    corptok_path = "data/harv/harv.corptok.txt"
-    tokenizer_path = "data/harv/harv.tokenizer.json"
+    # corp_path = "data/harv/harv.corp.txt"
+    # corptok_path = "data/harv/harv.corptok.txt"
+    # tokenizer_path = "data/harv/harv.tokenizer.json"
+    corp_path = "data/ezpz2/ezpz2.corp.txt"
+    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
+    tokenizer_path = "data/ezpz2/ezpz2.tokenizer.json"
 
     config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],

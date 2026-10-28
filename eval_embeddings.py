@@ -23,10 +23,10 @@ from embedding import LLNCAEmbeddings, LLNCAEmbeddingsConfig
 from main import (
     LLNCA,
     LLNCAAdvConfig,
-    LLNCACheckpointingConfig,
     LLNCAConfig,
     LLNCAGenConfig,
     LLNCAOptimConfig,
+    LLNCASaverConfig,
 )
 from nca import LLNCANCA, LLNCANCAConfig
 from tokenizer import LLNCATokenizer, LLNCAVocab
@@ -49,16 +49,16 @@ if __name__ == "__main__":
 
     embedding_weights = llnca.embeddings.embeddings.weight.detach().cpu().numpy()
 
-    pca = PCA(n_components=3)
-    results = pca.fit_transform(embedding_weights)
+    # pca = PCA(n_components=3)
+    # results = pca.fit_transform(embedding_weights)
 
-    # tnse = TSNE(
-    #     n_components=3,
-    #     perplexity=15,
-    #     random_state=42,
-    #     learning_rate="auto",
-    # )
-    # results = tnse.fit_transform(embedding_weights)
+    tnse = TSNE(
+        n_components=3,
+        perplexity=15,
+        random_state=42,
+        learning_rate="auto",
+    )
+    results = tnse.fit_transform(embedding_weights)
 
     vocab = []
 

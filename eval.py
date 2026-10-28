@@ -21,11 +21,11 @@ from embedding import LLNCAEmbeddings, LLNCAEmbeddingsConfig
 from main import (
     LLNCA,
     LLNCAAdvConfig,
-    LLNCACheckpointingConfig,
     LLNCAConfig,
     LLNCAGenConfig,
     LLNCAOptimConfig,
 )
+from saver import LLNCASaverConfig, LLNCASaver, LLNCAName
 from nca import LLNCANCA, LLNCANCAConfig
 from tokenizer import LLNCATokenizer, LLNCAVocab
 from tokenizer2 import LLNCATokenizer2, LLNCATokenizer2Config, LLNCAVocab2
@@ -78,6 +78,8 @@ if __name__ == "__main__":
     n_steps = (llnca.config.gen.steps[0] + llnca.config.gen.steps[1]) // 2
     print(n_steps)
 
+    # TODO disable LLNCASaver while running evals :sob:
+
     while True:
         prev_layers = None
         prev_frame = ""
@@ -89,7 +91,7 @@ if __name__ == "__main__":
             frame_str = frame_str.replace("<pad>", " ")
             print("\33[2K\r" + f"{target_str} {frame_str}", end="", flush=True)
             if prev_frame != frame_str:
-              time.sleep(0.5)
+                time.sleep(0.1)
             if (i + 1) % n_steps == 0:
                 time.sleep(2.00)
             prev_frame = frame_str

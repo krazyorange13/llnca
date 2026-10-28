@@ -1,8 +1,8 @@
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import torch
-from torch import nn
-from torch import optim
+from torch import nn, optim
 from torch.nn import functional as F
 
 
@@ -55,15 +55,23 @@ class LLNCANCA(nn.Module):
         layers = []
         layers.append(nn.Conv1d(filter_channels, mlp_width, kernel_size=1))
         for _ in range(self.config.mlp_depth - 2):
-            layers.append(nn.Conv1d(mlp_width, mlp_width, kernel_size=1))
             layers.append(activation_fn())
-        # for _ in range(self.config.mlp_depth - 2):
-        #     layers.append(activation_fn())
-        #     layers.append(nn.Conv1d(mlp_width, mlp_width, kernel_size=1))
-        # layers.append(activation_fn())
+            layers.append(nn.Conv1d(mlp_width, mlp_width, kernel_size=1))
+        layers.append(activation_fn())
         layers.append(nn.Conv1d(mlp_width, self.config.channels, kernel_size=1))
 
         self.seq = nn.Sequential(*layers)
+
+        self._disable_update_mask = False
+
+    @contextmanager
+    def disable_update_mask(self):
+        _prev = self._disable_update_mask
+        self._disable_update_mask = True
+        try:
+            yield
+        finally:
+            self._disable_update_mask = _prev
 
     def add_channels(self, x: torch.Tensor):
         b, c, w = x.shape
@@ -81,7 +89,10 @@ class LLNCANCA(nn.Module):
 
     def get_update_mask(self, x: torch.Tensor):
         b, _, w = x.shape
-        y = torch.rand(b, 1, w, device=x.device) < self.config.update_rate
+        if not self._disable_update_mask:
+            y = torch.rand(b, 1, w, device=x.device) < self.config.update_rate
+        else:
+            y = torch.ones(b, 1, w, device=x.device)
         return y.float()
 
     def step(self, x: torch.Tensor, freeze_mask: torch.Tensor):
