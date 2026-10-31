@@ -60,8 +60,8 @@ def log(folder: str = "", prefix: str = ""):
 
 @dataclass
 class LLNCAOptimConfig:
-    lr: float
-    lr_gamma: float
+    max_lr: float
+    min_lr: float
     weight_decay: float
     betas: tuple[float, float]
 
@@ -165,7 +165,7 @@ class LLNCA:
         self.gen_optim = optim.AdamW(
             list(self.gen_nca.parameters())
             + list(self.embeddings.embeddings.parameters()),
-            lr=gen_optim_conf.lr,
+            lr=gen_optim_conf.max_lr,
             betas=gen_optim_conf.betas,
             weight_decay=gen_optim_conf.weight_decay,
         )
@@ -173,19 +173,23 @@ class LLNCA:
 
         self.adv_optim = optim.AdamW(
             self.adv_nca.parameters(),
-            lr=adv_optim_conf.lr,
+            lr=adv_optim_conf.max_lr,
             betas=adv_optim_conf.betas,
             weight_decay=adv_optim_conf.weight_decay,
         )
         print("\033[2madv_optim\033[0m ", end=" ")
 
-        self.gen_scheduler = optim.lr_scheduler.ExponentialLR(
-            self.gen_optim, gen_optim_conf.lr_gamma
+        self.gen_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.gen_optim,
+            self.config.n_epochs,
+            self.config.gen.optim.min_lr,
         )
         print("\033[2mgen_scheduler\033[0m ", end=" ")
 
-        self.adv_scheduler = optim.lr_scheduler.ExponentialLR(
-            self.adv_optim, adv_optim_conf.lr_gamma
+        self.adv_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.gen_optim,
+            self.config.n_epochs,
+            self.config.gen.optim.min_lr,
         )
         print("\033[2madv_scheduler\033[0m ", end=" ")
 
@@ -263,6 +267,7 @@ class LLNCA:
             loss_avg = loss_avg.cpu()
 
             self.writer.add_scalar("loss", loss_avg, epoch_i)
+            self.writer.add_scalar("lr", self.adv_scheduler.get_last_lr()[0], epoch_i)
 
             if (epoch_i + 1) % self.config.saver.epochs_checkpts == 0:
                 self.checkpoint()
@@ -275,6 +280,7 @@ class LLNCA:
 
         self.writer.flush()
         self.writer.close()
+        self.saver.close()
 
     def log_histogram(self):
         for name, param in self.gen_nca.named_parameters():
@@ -426,14 +432,14 @@ if __name__ == "__main__":
     dataset_config = LLNCADatasetConfig(file=corptok_path)
 
     sampler_config = LLNCADataSamplerConfig(
-        bin_interval=11,
+        bin_interval=18,
         batch_len=16,
         drop_last=False,
         shuffle=True,
     )
 
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=8,
+        n_dims=12,
     )
 
     tokenizer_config = LLNCATokenizer2Config(
@@ -445,16 +451,16 @@ if __name__ == "__main__":
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=16,
-            mlp_width=48,
+            channels=32,
+            mlp_width=96,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
-            lr=3e-4,
-            lr_gamma=0.999995,
+            max_lr=1e-3,
+            min_lr=1e-4,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -463,16 +469,16 @@ if __name__ == "__main__":
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=16,
-            mlp_width=48,
+            channels=32,
+            mlp_width=96,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
-            lr=3e-4,
-            lr_gamma=0.999995,
+            max_lr=1e-3,
+            min_lr=1e-4,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -480,8 +486,8 @@ if __name__ == "__main__":
     )
 
     name_config = LLNCAName(
-        major="ezpz2",
-        minor="alpha",
+        major="harv",
+        minor="realpha",
     )
 
     saver_config = LLNCASaverConfig(
@@ -507,7 +513,7 @@ if __name__ == "__main__":
         vocab=vocab,
         gen=gen_config,
         adv=adv_config,
-        n_epochs=100000,
+        n_epochs=15000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )

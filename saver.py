@@ -128,8 +128,9 @@ class LLNCASaver:
         #     self.config.s3_endpoint,
         # ]
 
+        self.stop_event = threading.Event()
         self.thread = threading.Thread(
-            target=self.sync,
+            target=self.run,
             daemon=True,
         )
         self.thread.start()
@@ -142,7 +143,7 @@ class LLNCASaver:
             "",
         )
 
-    def sync(self):
+    def get_boto3(self):
         s3_resource = boto3.resource(
             "s3",
             endpoint_url="https://s3.krazyorange.dev",
@@ -153,36 +154,36 @@ class LLNCASaver:
             endpoint_url="https://s3.krazyorange.dev",
             config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
+        return s3_resource, s3_client
 
-        # NOTE: this is a workaround because multipart uploads are currently
-        # broken for alarik. this is 100mb to match the cloudflare upload limit.
-        # if alarik gets fixed, switch this back.
-        transfer_config = TransferConfig(multipart_threshold=100 * 1000 * 1000)
+    def sync(self, s3_resource, s3_client):
+        local = list_local(self.config.folder)
+        remote = list_remote(s3_resource, self.config.s3_folder)
+        uploads = get_uploads(local, remote)
+        for obj in uploads:
+            local_path = posixpath.join(self.config.folder, obj.path)
+            remote_path = posixpath.join(self.config.s3_folder, obj.path)
+            content_type, _ = mimetypes.guess_type(local_path)
+            if content_type is None:
+                content_type = "application/octet-stream"
+            s3_client.upload_file(
+                Bucket=self.config.s3_bucket,
+                Filename=local_path,
+                Key=remote_path,
+                ExtraArgs={"ContentType": content_type},
+            )
 
-        while True:
-            time.sleep(self.config.sync_interval)
+    def close(self):
+        self.stop_event.set()
+        self.thread.join()
+
+        s3_resource, s3_client = self.get_boto3()
+        self.sync(s3_resource, s3_client)
+
+    def run(self):
+        s3_resource, s3_client = self.get_boto3()
+        while not self.stop_event.wait(timeout=self.config.sync_interval):
             try:
-                local = list_local(self.config.folder)
-                remote = list_remote(s3_resource, self.config.s3_folder)
-                uploads = get_uploads(local, remote)
-                for obj in uploads:
-                    local_path = posixpath.join(self.config.folder, obj.path)
-                    remote_path = posixpath.join(self.config.s3_folder, obj.path)
-                    content_type, _ = mimetypes.guess_type(local_path)
-                    if content_type is None:
-                        content_type = "application/octet-stream"
-                    s3_client.upload_file(
-                        Bucket=self.config.s3_bucket,
-                        Filename=local_path,
-                        Key=remote_path,
-                        ExtraArgs={"ContentType": content_type},
-                        Config=transfer_config,
-                    )
-                # subprocess.run(
-                #     self.cmd,
-                #     check=True,
-                #     stdout=subprocess.DEVNULL,
-                #     stderr=subprocess.DEVNULL,
-                # )
+                self.sync(s3_resource, s3_client)
             except Exception as e:  # noqa: BLE001
                 print(f"LLNCASaver S3 sync error: {e}")

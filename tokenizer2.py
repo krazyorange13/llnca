@@ -194,12 +194,12 @@ if __name__ == "__main__":
     # corp_path = "data/plato/platos-republic.corp.txt"
     # corptok_path = "data/plato/platos-republic.corptok.txt"
     # tokenizer_path = "data/plato/platos-republic.tokenizer.json"
-    # corp_path = "data/harv/harv.corp.txt"
-    # corptok_path = "data/harv/harv.corptok.txt"
-    # tokenizer_path = "data/harv/harv.tokenizer.json"
-    corp_path = "data/ezpz2/ezpz2.corp.txt"
-    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
-    tokenizer_path = "data/ezpz2/ezpz2.tokenizer.json"
+    corp_path = "data/harv/harv.corp.txt"
+    corptok_path = "data/harv/harv.corptok.txt"
+    tokenizer_path = "data/harv/harv.tokenizer.json"
+    # corp_path = "data/ezpz2/ezpz2.corp.txt"
+    # corptok_path = "data/ezpz2/ezpz2.corptok.txt"
+    # tokenizer_path = "data/ezpz2/ezpz2.tokenizer.json"
 
     config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],

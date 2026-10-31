@@ -90,8 +90,8 @@ if __name__ == "__main__":
             frame_str = llnca.tokenizer.decode(frame)
             frame_str = frame_str.replace("<pad>", " ")
             print("\33[2K\r" + f"{target_str} {frame_str}", end="", flush=True)
-            if prev_frame != frame_str:
-                time.sleep(0.1)
+            # if prev_frame != frame_str:
+            time.sleep(0.05)
             if (i + 1) % n_steps == 0:
                 time.sleep(2.00)
             prev_frame = frame_str
