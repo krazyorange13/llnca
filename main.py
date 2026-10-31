@@ -99,69 +99,80 @@ class LLNCAConfig:
 class LLNCA:
     def __init__(
         self,
-        checkpoint: dict | None = None,
         config: LLNCAConfig | None = None,
-        debug: bool = False,
+        checkpoint: dict | None = None,
         is_eval: bool = False,
+        warm_start: bool = False,
     ):
         if checkpoint is None and config is None:
             raise RuntimeError(
                 "\033[31m[error]\033[0m either checkpoint or config must be provided."
             )
 
-        if checkpoint is not None and config is not None:
+        if warm_start and (checkpoint is None or config is None):
+            raise RuntimeError(
+                "\033[31m[error]\033[0m both checkpoint and config must be provided when using only_weights."
+            )
+
+        if checkpoint is not None and config is not None and not warm_start:
             checkpoint["config"] = config
 
         self.config: LLNCAConfig = (
-            config if checkpoint is None else checkpoint["config"]
+            config if checkpoint is None or warm_start else checkpoint["config"]
         )  # type: ignore
 
+        self.only_weights = warm_start
         self.is_eval = is_eval
 
         if not self.is_eval:
-            self.writer = SummaryWriter(log_dir=self.config.saver.logs_folder)
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device("cpu")
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # self.device = torch.device("cpu")
-
-        _epoch_str = ("-" + str(checkpoint["curr_epoch"] + 1)) if checkpoint else ""
+        _epoch_str = (
+            ("-" + str(checkpoint["curr_epoch"] + 1))
+            if checkpoint and not warm_start
+            else ""
+        )
         print(f"loading {self.config.saver.name.full}{_epoch_str}...", end=" ")
 
+        if not self.is_eval:
+            self.writer = SummaryWriter(log_dir=self.config.saver.logs_folder)
+            self._print_load("writer")
+
         self.saver = LLNCASaver(config=self.config.saver, eval=is_eval)
-        print("\033[2msaver\033[0m ", end=" ")
+        self._print_load("saver")
 
         self.corpus = LLNCACorpus(config=self.config.corpus)
-        print("\033[2mcorpus\033[0m ", end=" ")
+        self._print_load("corpus")
 
         self.tokenizer = LLNCATokenizer2(
             config=self.config.tokenizer, vocab=self.config.vocab
         )
-        print("\033[2mtokenizer\033[0m ", end=" ")
+        self._print_load("tokenizer")
 
         self.embeddings = LLNCAEmbeddings2(
             self.tokenizer, config=self.config.embeddings
         )
         self.embeddings.embeddings.to(self.device)
-        print("\033[2membeddings\033[0m ", end=" ")
+        self._print_load("embeddings")
 
         self.dataset = LLNCADataset(config=self.config.dataset)
-        print("\033[2mdataset\033[0m ", end=" ")
+        self._print_load("dataset")
 
         self.sampler = LLNCADataSampler(self.dataset, config=self.config.sampler)
-        print("\033[2msampler\033[0m ", end=" ")
+        self._print_load("sampler")
 
         self.dataloader = torch.utils.data.DataLoader(
             dataset=self.dataset, batch_sampler=self.sampler
         )
-        print("\033[2mdataloader\033[0m ", end=" ")
+        self._print_load("dataloader")
 
         self.gen_nca = LLNCANCA(config=self.config.gen.nca).to(self.device)
-        # self.gen_nca = torch.compile(self.gen_nca)
-        print("\033[2mgen_nca\033[0m ", end=" ")
+        self._print_load("gen_nca")
 
         self.adv_nca = LLNCANCA(config=self.config.adv.nca).to(self.device)
-        # self.adv_nca = torch.compile(self.adv_nca)
-        print("\033[2madv_nca\033[0m ", end=" ")
+        self._print_load("adv_nca")
 
         gen_optim_conf = self.config.gen.optim
         adv_optim_conf = self.config.adv.optim
@@ -173,7 +184,7 @@ class LLNCA:
             betas=gen_optim_conf.betas,
             weight_decay=gen_optim_conf.weight_decay,
         )
-        print("\033[2mgen_optim\033[0m ", end=" ")
+        self._print_load("gen_optim")
 
         self.adv_optim = optim.AdamW(
             self.adv_nca.parameters(),
@@ -181,21 +192,21 @@ class LLNCA:
             betas=adv_optim_conf.betas,
             weight_decay=adv_optim_conf.weight_decay,
         )
-        print("\033[2madv_optim\033[0m ", end=" ")
+        self._print_load("adv_optim")
 
         self.gen_scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.gen_optim,
             self.config.n_epochs,
             self.config.gen.optim.min_lr,
         )
-        print("\033[2mgen_scheduler\033[0m ", end=" ")
+        self._print_load("gen_scheduler")
 
         self.adv_scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.adv_optim,
             self.config.n_epochs,
             self.config.adv.optim.min_lr,
         )
-        print("\033[2madv_scheduler\033[0m ", end=" ")
+        self._print_load("adv_scheduler")
 
         print()
 
@@ -207,9 +218,10 @@ class LLNCA:
             self.adv_nca.load_state_dict(checkpoint["adv_nca"])
             self.gen_optim.load_state_dict(checkpoint["gen_optim"])
             self.adv_optim.load_state_dict(checkpoint["adv_optim"])
-            self.gen_scheduler.load_state_dict(checkpoint["gen_scheduler"])
-            self.adv_scheduler.load_state_dict(checkpoint["adv_scheduler"])
-            self.curr_epoch = checkpoint["curr_epoch"]
+            if not warm_start:
+                self.gen_scheduler.load_state_dict(checkpoint["gen_scheduler"])
+                self.adv_scheduler.load_state_dict(checkpoint["adv_scheduler"])
+                self.curr_epoch = checkpoint["curr_epoch"]
 
         if not self.is_eval:
             with warnings.catch_warnings(), self.gen_nca.disable_update_mask():
@@ -219,6 +231,13 @@ class LLNCA:
                 self.writer.add_graph(
                     self.gen_nca, self.get_nca_dummy(self.config.gen.nca)
                 )
+
+        # self.super_gen_nca = torch.compile(self.gen_nca, dynamic=True)
+        # from torch._dynamo.utils import compile_times
+        # print(compile_times("str"))
+
+    def _print_load(self, content: str):
+        print(f"\033[2m{content}\033[0m ", end=" ")
 
     def get_state(self):
         state = {
@@ -238,6 +257,16 @@ class LLNCA:
         self.gen_nca.train()
         self.adv_nca.train()
 
+        # with torch.profiler.profile(
+        #     activities=[torch.profiler.ProfilerActivity.CPU],
+        #     schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+        #     on_trace_ready=torch.profiler.tensorboard_trace_handler(
+        #         "runs/harv-realpha-ft/profiler"
+        #     ),
+        #     record_shapes=False,
+        #     profile_memory=False,
+        #     with_stack=False,
+        # ) as profiler:
         for epoch_i in tqdm(
             range(self.curr_epoch, self.config.n_epochs),
             initial=self.curr_epoch,
@@ -251,9 +280,10 @@ class LLNCA:
             loss_acc = torch.tensor(0.0, device=self.device)
 
             for x, y in self.dataloader:
-                n_steps = random.randint(
-                    self.config.gen.steps[0], self.config.gen.steps[1]
-                )
+                # n_steps = random.randint(
+                #     self.config.gen.steps[0], self.config.gen.steps[1]
+                # )
+                n_steps = (self.config.gen.steps[0] + self.config.gen.steps[1]) // 2
                 xs, _, y_idxs = self.tok_to_embed(x, y)
                 xs = self.gen_nca.add_channels(xs)
                 ys_pred = self.gen_nca(xs, steps=n_steps)
@@ -283,6 +313,10 @@ class LLNCA:
 
             if (epoch_i + 1) % self.config.saver.epochs_embeddings == 0:
                 self.log_embeddings()
+
+            # profiler.step()
+
+        # print(profiler.key_averages().table(sort_by="cpu_time_total", row_limit=10))
 
         if not self.is_eval:
             self.writer.flush()
@@ -484,8 +518,8 @@ if __name__ == "__main__":
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
-            max_lr=3e-4,
-            min_lr=3e-5,
+            max_lr=2e-4,
+            min_lr=2e-5,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -502,8 +536,8 @@ if __name__ == "__main__":
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
-            max_lr=3e-4,
-            min_lr=3e-5,
+            max_lr=2e-4,
+            min_lr=2e-5,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -512,7 +546,7 @@ if __name__ == "__main__":
 
     name_config = LLNCAName(
         major="harv",
-        minor="realpha",
+        minor="realpha-ft",
     )
 
     saver_config = LLNCASaverConfig(
@@ -538,17 +572,17 @@ if __name__ == "__main__":
         vocab=vocab,
         gen=gen_config,
         adv=adv_config,
-        n_epochs=15000,
+        n_epochs=10000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )
 
     load_dotenv()
 
-    # checkpoint = torch.load("models/harv-beta-3000.pth", weights_only=False)
-    # checkpoint["config"].n_epochs = 10000
+    checkpoint = torch.load("models/harv-realpha-15000.pth", weights_only=False)
+    # checkpoint["config"].n_epochs = 20000
 
-    llnca = LLNCA(config=config)
+    llnca = LLNCA(config=config, checkpoint=checkpoint, warm_start=True)
     # llnca = LLNCA(
     #     checkpoint=checkpoint,
     #     visdom=visdom,

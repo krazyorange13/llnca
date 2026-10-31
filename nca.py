@@ -82,7 +82,7 @@ class LLNCANCA(nn.Module):
 
     def get_alive_mask(self, x: torch.Tensor):
         y = F.pad(x.abs(), (1, 0), mode="constant", value=0.0)
-        y = F.max_pool1d(y, kernel_size=2, stride=1)
+        y = F.max_pool1d(y, kernel_size=2, stride=1, return_indices=False)
         y = y.amax(dim=1, keepdim=True)
         y = y >= self.config.alive_threshold
         return y.float()
