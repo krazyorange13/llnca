@@ -415,8 +415,8 @@ class LLNCA:
 
 
 if __name__ == "__main__":
-    corptok_path = "data/ezpz2/ezpz2.corptok.txt"
-    vocab_path = "data/ezpz2/ezpz2.tokenizer.json"
+    corptok_path = "data/harv/harv.corptok.txt"
+    vocab_path = "data/harv/harv.tokenizer.json"
 
     corpus_config = LLNCACorpusConfig(
         LLNCACorpusSlidingConfig(
