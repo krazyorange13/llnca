@@ -116,8 +116,10 @@ class LLNCASaverConfig:
 
 
 class LLNCASaver:
-    def __init__(self, config: LLNCASaverConfig):
+    def __init__(self, config: LLNCASaverConfig, eval=False):
         self.config = config
+        self.eval = eval
+
         # self.cmd = [
         #     "aws",
         #     "s3",
@@ -133,7 +135,8 @@ class LLNCASaver:
             target=self.run,
             daemon=True,
         )
-        self.thread.start()
+        if not self.eval:
+            self.thread.start()
 
     @property
     def s3_full_uri(self):
@@ -157,6 +160,9 @@ class LLNCASaver:
         return s3_resource, s3_client
 
     def sync(self, s3_resource, s3_client):
+        if self.eval:
+            return
+
         local = list_local(self.config.folder)
         remote = list_remote(s3_resource, self.config.s3_folder)
         uploads = get_uploads(local, remote)
@@ -174,6 +180,9 @@ class LLNCASaver:
             )
 
     def close(self):
+        if self.eval:
+            return
+
         self.stop_event.set()
         self.thread.join()
 

@@ -42,7 +42,8 @@ if __name__ == "__main__":
             path,
             weights_only=False,
             map_location=torch.device("cpu"),
-        )
+        ),
+        is_eval=True,
     )
 
     # llnca1 = LLNCA(
@@ -91,7 +92,7 @@ if __name__ == "__main__":
             frame_str = frame_str.replace("<pad>", " ")
             print("\33[2K\r" + f"{target_str} {frame_str}", end="", flush=True)
             # if prev_frame != frame_str:
-            time.sleep(0.05)
+            time.sleep(0.025)
             if (i + 1) % n_steps == 0:
-                time.sleep(2.00)
+                time.sleep(1.00)
             prev_frame = frame_str

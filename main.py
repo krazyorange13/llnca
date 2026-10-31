@@ -102,6 +102,7 @@ class LLNCA:
         checkpoint: dict | None = None,
         config: LLNCAConfig | None = None,
         debug: bool = False,
+        is_eval: bool = False,
     ):
         if checkpoint is None and config is None:
             raise RuntimeError(
@@ -115,7 +116,10 @@ class LLNCA:
             config if checkpoint is None else checkpoint["config"]
         )  # type: ignore
 
-        self.writer = SummaryWriter(log_dir=self.config.saver.logs_folder)
+        self.is_eval = is_eval
+
+        if not self.is_eval:
+            self.writer = SummaryWriter(log_dir=self.config.saver.logs_folder)
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # self.device = torch.device("cpu")
@@ -123,7 +127,7 @@ class LLNCA:
         _epoch_str = ("-" + str(checkpoint["curr_epoch"] + 1)) if checkpoint else ""
         print(f"loading {self.config.saver.name.full}{_epoch_str}...", end=" ")
 
-        self.saver = LLNCASaver(config=self.config.saver)
+        self.saver = LLNCASaver(config=self.config.saver, eval=is_eval)
         print("\033[2msaver\033[0m ", end=" ")
 
         self.corpus = LLNCACorpus(config=self.config.corpus)
@@ -187,9 +191,9 @@ class LLNCA:
         print("\033[2mgen_scheduler\033[0m ", end=" ")
 
         self.adv_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            self.gen_optim,
+            self.adv_optim,
             self.config.n_epochs,
-            self.config.gen.optim.min_lr,
+            self.config.adv.optim.min_lr,
         )
         print("\033[2madv_scheduler\033[0m ", end=" ")
 
@@ -207,11 +211,14 @@ class LLNCA:
             self.adv_scheduler.load_state_dict(checkpoint["adv_scheduler"])
             self.curr_epoch = checkpoint["curr_epoch"]
 
-        with warnings.catch_warnings(), self.gen_nca.disable_update_mask():
-            warnings.filterwarnings(
-                "ignore", category=FutureWarning, module="torch.jit.*"
-            )
-            self.writer.add_graph(self.gen_nca, self.get_nca_dummy(self.config.gen.nca))
+        if not self.is_eval:
+            with warnings.catch_warnings(), self.gen_nca.disable_update_mask():
+                warnings.filterwarnings(
+                    "ignore", category=FutureWarning, module="torch.jit.*"
+                )
+                self.writer.add_graph(
+                    self.gen_nca, self.get_nca_dummy(self.config.gen.nca)
+                )
 
     def get_state(self):
         state = {
@@ -266,8 +273,7 @@ class LLNCA:
             loss_avg = loss_acc / len(self.dataloader)
             loss_avg = loss_avg.cpu()
 
-            self.writer.add_scalar("loss", loss_avg, epoch_i)
-            self.writer.add_scalar("lr", self.adv_scheduler.get_last_lr()[0], epoch_i)
+            self.log_epoch(loss_avg=loss_avg)
 
             if (epoch_i + 1) % self.config.saver.epochs_checkpts == 0:
                 self.checkpoint()
@@ -278,11 +284,24 @@ class LLNCA:
             if (epoch_i + 1) % self.config.saver.epochs_embeddings == 0:
                 self.log_embeddings()
 
-        self.writer.flush()
-        self.writer.close()
-        self.saver.close()
+        if not self.is_eval:
+            self.writer.flush()
+            self.writer.close()
+            self.saver.close()
+
+    def log_epoch(self, loss_avg):
+        if self.is_eval:
+            return
+
+        self.writer.add_scalar("loss", loss_avg, self.curr_epoch + 1)
+        self.writer.add_scalar(
+            "lr", self.gen_scheduler.get_last_lr()[0], self.curr_epoch + 1
+        )
 
     def log_histogram(self):
+        if self.is_eval:
+            return
+
         for name, param in self.gen_nca.named_parameters():
             if param.requires_grad:
                 self.writer.add_histogram(
@@ -292,6 +311,9 @@ class LLNCA:
                 )
 
     def log_embeddings(self):
+        if self.is_eval:
+            return
+
         weights = self.embeddings.embeddings.weight.detach().cpu().numpy()
         labels = self.tokenizer.vocab_arr
         self.writer.add_embedding(
@@ -306,6 +328,9 @@ class LLNCA:
         torch.save(state, path)
 
     def checkpoint(self):
+        if self.is_eval:
+            return
+
         name = "".join(
             [
                 self.config.saver.name.full,
@@ -459,8 +484,8 @@ if __name__ == "__main__":
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
-            max_lr=1e-3,
-            min_lr=1e-4,
+            max_lr=3e-4,
+            min_lr=3e-5,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -477,8 +502,8 @@ if __name__ == "__main__":
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
-            max_lr=1e-3,
-            min_lr=1e-4,
+            max_lr=3e-4,
+            min_lr=3e-5,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
