@@ -498,7 +498,7 @@ if __name__ == "__main__":
     )
 
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=24,
+        n_dims=18,
     )
 
     tokenizer_config = LLNCATokenizer2Config(
@@ -510,8 +510,8 @@ if __name__ == "__main__":
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=48,
-            mlp_width=144,
+            channels=36,
+            mlp_width=108,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -528,8 +528,8 @@ if __name__ == "__main__":
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=48,
-            mlp_width=144,
+            channels=36,
+            mlp_width=108,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -546,7 +546,7 @@ if __name__ == "__main__":
 
     name_config = LLNCAName(
         major="harv",
-        minor="rebeta",
+        minor="rebeta-md",
     )
 
     saver_config = LLNCASaverConfig(
