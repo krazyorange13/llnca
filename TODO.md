@@ -8,7 +8,7 @@
 - [ ] implement config diffs (smth | None = None)
 - [ ] implement config viewing (eval2.py)
 - [ ] implement config loading for past versions (smth cool or getattr/setattr)
-- [ ] implement robust training data saving (loss, gradients, eval performance)
+- [x] implement robust training data saving (loss, gradients, eval performance)
 - [ ] implement grid search (fast fail, binary search exploration)
 - [ ] implement eval2.py launching and resuming grid searches and training runs
 - [ ] automatically launch and monitor kaggle notebooks

@@ -11,8 +11,5 @@
 !wget https://files.krazyorange.dev/data/$DATASET/$DATASET.tokenizer.json -O data/$DATASET/$DATASET.tokenizer.json
 !wget https://files.krazyorange.dev/data/$DATASET/$DATASET.tokenizer.json -O data/$DATASET/$DATASET.tokenizer.json
 
-!mkdir -p models/
-!wget https://files.krazyorange.dev/models/harv-realpha-15000.pth -O models/harv-realpha-15000.pth
-
 !pip install bpeasy
 !pip install tensorboard

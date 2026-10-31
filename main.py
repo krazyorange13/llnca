@@ -498,7 +498,7 @@ if __name__ == "__main__":
     )
 
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=12,
+        n_dims=24,
     )
 
     tokenizer_config = LLNCATokenizer2Config(
@@ -510,16 +510,16 @@ if __name__ == "__main__":
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=32,
-            mlp_width=96,
+            channels=48,
+            mlp_width=144,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
-            max_lr=2e-4,
-            min_lr=2e-5,
+            max_lr=6e-4,
+            min_lr=6e-5,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -528,16 +528,16 @@ if __name__ == "__main__":
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=32,
-            mlp_width=96,
+            channels=48,
+            mlp_width=144,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
             alive_threshold=0.01,
         ),
         LLNCAOptimConfig(
-            max_lr=2e-4,
-            min_lr=2e-5,
+            max_lr=6e-4,
+            min_lr=6e-5,
             weight_decay=0.01,
             betas=(0.9, 0.95),
         ),
@@ -546,7 +546,7 @@ if __name__ == "__main__":
 
     name_config = LLNCAName(
         major="harv",
-        minor="realpha-ft",
+        minor="rebeta",
     )
 
     saver_config = LLNCASaverConfig(
@@ -572,19 +572,16 @@ if __name__ == "__main__":
         vocab=vocab,
         gen=gen_config,
         adv=adv_config,
-        n_epochs=10000,
+        n_epochs=15000,
         lambda_pxl=0.5,
         lambda_gan=0.5,
     )
 
     load_dotenv()
 
-    checkpoint = torch.load("models/harv-realpha-15000.pth", weights_only=False)
+    # checkpoint = torch.load("models/harv-realpha-15000.pth", weights_only=False)
     # checkpoint["config"].n_epochs = 20000
 
-    llnca = LLNCA(config=config, checkpoint=checkpoint, warm_start=True)
-    # llnca = LLNCA(
-    #     checkpoint=checkpoint,
-    #     visdom=visdom,
-    # )
+    llnca = LLNCA(config=config)
+    # llnca = LLNCA(config=config, checkpoint=checkpoint, warm_start=True)
     llnca.train()
