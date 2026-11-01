@@ -491,27 +491,27 @@ if __name__ == "__main__":
     dataset_config = LLNCADatasetConfig(file=corptok_path)
 
     sampler_config = LLNCADataSamplerConfig(
-        bin_interval=18,
+        bin_interval=25,
         batch_len=16,
         drop_last=False,
         shuffle=True,
     )
 
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=18,
+        n_dims=12,
     )
 
     tokenizer_config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],
-        max_token_length=4,
+        max_token_length=2,
     )
     with open(vocab_path) as file:
         vocab = json.load(file)
 
     gen_config = LLNCAGenConfig(
         LLNCANCAConfig(
-            channels=36,
-            mlp_width=108,
+            channels=48,
+            mlp_width=144,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -528,8 +528,8 @@ if __name__ == "__main__":
 
     adv_config = LLNCAAdvConfig(
         LLNCANCAConfig(
-            channels=36,
-            mlp_width=108,
+            channels=48,
+            mlp_width=144,
             mlp_depth=8,
             activation_fn="ReLU",
             update_rate=0.5,
@@ -546,7 +546,7 @@ if __name__ == "__main__":
 
     name_config = LLNCAName(
         major="harv",
-        minor="rebeta-md",
+        minor="rebeta-tk2",
     )
 
     saver_config = LLNCASaverConfig(
