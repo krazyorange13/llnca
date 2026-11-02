@@ -551,7 +551,7 @@ if __name__ == "__main__":
 
     name_config = LLNCAName(
         major="harv",
-        minor="rebeta-tk6",
+        minor="rebeta-md-tk6",
     )
 
     saver_config = LLNCASaverConfig(
@@ -584,10 +584,10 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    # checkpoint = torch.load("models/harv-realpha-15000.pth", weights_only=False)
+    checkpoint = torch.load("models/harv-rebeta-md-tk6-3300.pth", weights_only=False)
     # checkpoint["config"].n_epochs = 20000
 
-    llnca = LLNCA(config=config)
-    # llnca = LLNCA(checkpoint=checkpoint)
+    # llnca = LLNCA(config=config)
+    llnca = LLNCA(checkpoint=checkpoint)
     # llnca = LLNCA(config=config, checkpoint=checkpoint, warm_start=True)
     llnca.train()
