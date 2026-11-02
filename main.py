@@ -125,9 +125,14 @@ class LLNCA:
         self.is_eval = is_eval
 
         if not self.is_eval:
+            # try:
+            #     self.device = torch.device("tpu")
+            # except RuntimeError:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device("cpu")
+
+        print("device:", self.device)
 
         _epoch_str = (
             ("-" + str(checkpoint["curr_epoch"] + 1))
@@ -491,19 +496,19 @@ if __name__ == "__main__":
     dataset_config = LLNCADatasetConfig(file=corptok_path)
 
     sampler_config = LLNCADataSamplerConfig(
-        bin_interval=25,
+        bin_interval=16,
         batch_len=16,
         drop_last=False,
         shuffle=True,
     )
 
     embedding_config = LLNCAEmbeddingsConfig(
-        n_dims=12,
+        n_dims=24,
     )
 
     tokenizer_config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],
-        max_token_length=2,
+        max_token_length=6,
     )
     with open(vocab_path) as file:
         vocab = json.load(file)
@@ -546,7 +551,7 @@ if __name__ == "__main__":
 
     name_config = LLNCAName(
         major="harv",
-        minor="rebeta-tk2",
+        minor="rebeta-tk6",
     )
 
     saver_config = LLNCASaverConfig(
@@ -583,5 +588,6 @@ if __name__ == "__main__":
     # checkpoint["config"].n_epochs = 20000
 
     llnca = LLNCA(config=config)
+    # llnca = LLNCA(checkpoint=checkpoint)
     # llnca = LLNCA(config=config, checkpoint=checkpoint, warm_start=True)
     llnca.train()

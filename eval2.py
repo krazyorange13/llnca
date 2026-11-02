@@ -25,12 +25,12 @@ from embedding import LLNCAEmbeddings, LLNCAEmbeddingsConfig
 from main import (
     LLNCA,
     LLNCAAdvConfig,
-    LLNCACheckpointingConfig,
     LLNCAConfig,
     LLNCAGenConfig,
     LLNCAOptimConfig,
 )
 from nca import LLNCANCA, LLNCANCAConfig
+from saver import LLNCAName, LLNCASaver, LLNCASaverConfig
 from tokenizer import LLNCATokenizer, LLNCAVocab
 from tokenizer2 import LLNCATokenizer2, LLNCATokenizer2Config, LLNCAVocab2
 
@@ -251,7 +251,7 @@ class LLNCAProcess:
         checkpoint = torch.load(
             model_path, weights_only=False, map_location=torch.device("cpu")
         )
-        llnca = LLNCA(checkpoint=checkpoint)
+        llnca = LLNCA(checkpoint=checkpoint, is_eval=True)
         upscale = 10
 
         x_str = ""
@@ -314,7 +314,6 @@ class LLNCAProcess:
 
 
 def model_path_callback(sender, app_data):
-    print(sender, app_data)
     for model_path in app_data["selections"].values():
         llnca_process_manager.add_llnca(model_path)
 

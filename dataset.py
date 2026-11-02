@@ -94,13 +94,14 @@ class LLNCADataSampler(Sampler):
 
 
 if __name__ == "__main__":
+    # corptok_path = "data/plato/plato.corptok.txt"
     corptok_path = "data/harv/harv.corptok.txt"
     print(f"loading dataset... \033[2m{corptok_path}\033[0m")
     dataset_config = LLNCADatasetConfig(file=corptok_path)
     dataset = LLNCADataset(dataset_config)
     print("loading sampler...")
     sampler_config = LLNCADataSamplerConfig(
-        bin_interval=25,
+        bin_interval=16,
         batch_len=16,
         drop_last=False,
         shuffle=True,

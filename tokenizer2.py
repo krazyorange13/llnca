@@ -191,9 +191,9 @@ class LLNCATokenizer2:
 
 
 if __name__ == "__main__":
-    # corp_path = "data/plato/platos-republic.corp.txt"
-    # corptok_path = "data/plato/platos-republic.corptok.txt"
-    # tokenizer_path = "data/plato/platos-republic.tokenizer.json"
+    # corp_path = "data/plato/plato.corp.txt"
+    # corptok_path = "data/plato/plato.corptok.txt"
+    # tokenizer_path = "data/plato/plato.tokenizer.json"
     corp_path = "data/harv/harv.corp.txt"
     corptok_path = "data/harv/harv.corptok.txt"
     tokenizer_path = "data/harv/harv.tokenizer.json"
@@ -203,7 +203,7 @@ if __name__ == "__main__":
 
     config = LLNCATokenizer2Config(
         special_tokens=["<pad>"],
-        max_token_length=4,
+        max_token_length=6,
     )
     tokenizer = LLNCATokenizer2(config=config)
     tokenizer.train(corp_path)

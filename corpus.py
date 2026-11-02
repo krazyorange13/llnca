@@ -130,15 +130,19 @@ class LLNCACorpus:
 
 
 if __name__ == "__main__":
-    in_file = "data/harv/harv.txt"
-    norm_file = "data/harv/harv.norm.txt"
-    slid_file = "data/harv/harv.slid.txt"
-    out_file = "data/harv/harv.corp.txt"
+    # in_file = "data/harv/harv.txt"
+    # norm_file = "data/harv/harv.norm.txt"
+    # slid_file = "data/harv/harv.slid.txt"
+    # out_file = "data/harv/harv.corp.txt"
+    in_file = "data/plato/plato.txt"
+    norm_file = "data/plato/plato.norm.txt"
+    slid_file = "data/plato/plato.slid.txt"
+    out_file = "data/plato/plato.corp.txt"
     print("loading config...")
     config = LLNCACorpusConfig(
         LLNCACorpusSlidingConfig(
             window_len=15,
-            window_space=5,
+            window_space=10,
             word_level=True,
         ),
         LLNCACorpusTruncConfig(
@@ -148,6 +152,6 @@ if __name__ == "__main__":
     corpus = LLNCACorpus(config=config)
     corpus.normalize(in_file=in_file, out_file=norm_file)
     corpus.generate_sliding(in_file=norm_file, out_file=slid_file)
-    # corpus.generate_trunc(in_file=slid_file, out_file=out_file)
-    corpus.generate_trunc(in_file=in_file, out_file=out_file)
+    corpus.generate_trunc(in_file=slid_file, out_file=out_file)
+    # corpus.generate_trunc(in_file=norm_file, out_file=out_file)
     corpus.verify(in_file=out_file)

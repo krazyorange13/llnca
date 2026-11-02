@@ -79,79 +79,28 @@ class StrongRegistry(Registry):
         self.__class__._instances[self.id] = self
 
 
-class Visual(StrongRegistry, Logger):
-    def __init__(self):
-        super().__init__()
-        self.ui_thread = ThreadedPoll(
-            poll_rate=1.0,
-            poll_callback=self.poll_ui_thread,
-            init_callback=self.open_ui,
-            deinit_callback=self.close_ui,
-        )
-        self.ui_thread.start()
-
-    @auto_log
-    def open_ui(self):
-        _instances = self.__class__._instances
-        close_ref = weakref.WeakMethod(self.close_ui)
-
-        def close_callback():
-            callback = close_ref()
-            if callback is not None:
-                result = callback()
-                return result
-            return None
-
-        with dpg.window(
-            tag=self @ "window",
-            label=self @ "window",
-            width=300,
-            height=200,
-            pos=[20 * len(_instances), 20 * len(_instances)],
-            autosize=True,
-            on_close=lambda: close_callback(),
-        ):  # type: ignore
-            pass
-
-    def poll_ui_thread(self, *args, **kwargs): ...
-
-    def close_ui(self): ...
-
-
-class VisualUnbound(Visual):
-    @auto_log
-    def close_ui(self):
-        if dpg.does_item_exist(self @ "window"):
-            dpg.configure_item(self @ "window", on_close=None)
-            dpg.delete_item(self @ "window")
-            self.ui_thread.stop()
-
-
-class VisualBound(Visual):
-    @auto_log
-    def close_ui(self):
-        if dpg.does_item_exist(self @ "window"):
-            dpg.configure_item(self @ "window", on_close=None)
-            dpg.delete_item(self @ "window")
-            self.ui_thread.stop()
-            self.ui_thread.poll_callback = None  # type: ignore
-            self.ui_thread.init_callback = None
-            self.ui_thread.deinit_callback = None
-        if self.id in self.__class__._instances:
-            del self.__class__._instances[self.id]
-
-
 class Threaded(WeakRegistry, Logger):
     def __init__(self, use_input: bool = False, use_output: bool = False):
         super().__init__()
+        self.use_input = use_input
+        self.use_output = use_output
         self.stop_event = threading.Event()
-        self.input = queue.Queue() if use_input else None
-        self.output = queue.Queue() if use_output else None
+        self.input = queue.Queue() if self.use_input else None
+        self.output = queue.Queue() if self.use_output else None
         self.thread = None
 
     @auto_log
     def start(self):
+        if self.thread is not None:
+            return
+
+        curr_thread = threading.current_thread()
+        if curr_thread == self.thread:
+            return
+
         self.stop_event.clear()
+        self.input = queue.Queue() if self.use_input else None
+        self.output = queue.Queue() if self.use_output else None
         self.thread = threading.Thread(
             target=self.run,
             args=(
@@ -164,14 +113,22 @@ class Threaded(WeakRegistry, Logger):
 
     @auto_log
     def stop(self):
+        if self.thread is None:
+            return
+
+        curr_thread = threading.current_thread()
+        if curr_thread == self.thread:
+            return
+
         self.stop_event.set()
         if self.input is not None:
             self.input.shutdown()
+            self.input = None
         if self.output is not None:
             self.output.shutdown()
-        curr_thread = threading.current_thread()
-        if self.thread is not None and curr_thread != self.thread:
-            self.thread.join()
+            self.output = None
+        self.thread.join()
+        self.thread = None
 
     @auto_log
     def run(self, *args, **kwargs): ...
@@ -248,6 +205,68 @@ class Multiprocessed(WeakRegistry, Logger):
         input: multiprocessing.Queue,
         output: multiprocessing.Queue,
     ): ...
+
+
+class Visual(StrongRegistry, Logger):
+    def __init__(self):
+        super().__init__()
+        self.ui_thread = ThreadedPoll(
+            poll_rate=1.0,
+            poll_callback=self.poll_ui_thread,
+            init_callback=self.open_ui,
+            deinit_callback=self.close_ui,
+        )
+        self.ui_thread.start()
+
+    @auto_log
+    def open_ui(self):
+        _instances = self.__class__._instances
+        close_ref = weakref.WeakMethod(self.close_ui)
+
+        def close_callback():
+            callback = close_ref()
+            if callback is not None:
+                result = callback()
+                return result
+            return None
+
+        with dpg.window(
+            tag=self @ "window",
+            label=self @ "window",
+            width=300,
+            height=200,
+            pos=[20 * len(_instances), 20 * len(_instances)],
+            autosize=True,
+            on_close=lambda: close_callback(),
+        ):  # type: ignore
+            pass
+
+    def poll_ui_thread(self, *args, **kwargs): ...
+
+    def close_ui(self): ...
+
+
+class VisualUnbound(Visual):
+    @auto_log
+    def close_ui(self):
+        if dpg.does_item_exist(self @ "window"):
+            dpg.configure_item(self @ "window", on_close=None)
+            dpg.delete_item(self @ "window")
+            self.ui_thread.stop()
+
+
+class VisualBound(Visual):
+    @auto_log
+    def close_ui(self):
+        if dpg.does_item_exist(self @ "window"):
+            dpg.configure_item(self @ "window", on_close=None)
+            dpg.delete_item(self @ "window")
+            self.ui_thread.stop()
+            self.ui_thread.poll_callback = lambda *args, **kwargs: None
+            self.ui_thread.init_callback = lambda *args, **kwargs: None
+            self.ui_thread.deinit_callback = lambda *args, **kwargs: None
+        if self.id in self.__class__._instances:
+            del self.__class__._instances[self.id]
 
 
 class Inspector(VisualBound):

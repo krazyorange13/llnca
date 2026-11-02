@@ -9,7 +9,7 @@
 !mkdir -p data/$DATASET/
 !wget https://files.krazyorange.dev/data/$DATASET/$DATASET.corptok.txt -O data/$DATASET/$DATASET.corptok.txt
 !wget https://files.krazyorange.dev/data/$DATASET/$DATASET.tokenizer.json -O data/$DATASET/$DATASET.tokenizer.json
-!wget https://files.krazyorange.dev/data/$DATASET/$DATASET.tokenizer.json -O data/$DATASET/$DATASET.tokenizer.json
 
 !pip install bpeasy
 !pip install tensorboard
+# !pip install torch_tpu

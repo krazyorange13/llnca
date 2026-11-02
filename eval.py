@@ -25,8 +25,8 @@ from main import (
     LLNCAGenConfig,
     LLNCAOptimConfig,
 )
-from saver import LLNCASaverConfig, LLNCASaver, LLNCAName
 from nca import LLNCANCA, LLNCANCAConfig
+from saver import LLNCAName, LLNCASaver, LLNCASaverConfig
 from tokenizer import LLNCATokenizer, LLNCAVocab
 from tokenizer2 import LLNCATokenizer2, LLNCATokenizer2Config, LLNCAVocab2
 

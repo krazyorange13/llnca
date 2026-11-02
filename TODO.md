@@ -1,18 +1,15 @@
 ## todos
 
+### runs
+
+- [x] harv-rebeta-tk2
+- [x] harv-rebeta-md-tk2
+- [ ] harv-rebeta-tk6
+- [ ] harv-rebeta-md-tk6
+
 ### developmental
 
 - [ ] overhaul eval2.py for eval3.py
-- [x] use new embeddings2
-- [ ] merge tokenizer2.py into tokenizer.py
-- [ ] implement config diffs (smth | None = None)
-- [ ] implement config viewing (eval2.py)
-- [ ] implement config loading for past versions (smth cool or getattr/setattr)
-- [x] implement robust training data saving (loss, gradients, eval performance)
-- [ ] implement grid search (fast fail, binary search exploration)
-- [ ] implement eval2.py launching and resuming grid searches and training runs
-- [ ] automatically launch and monitor kaggle notebooks
-- [ ] ~~use ur damn google cloud credits before they run out~~
 
 ### experimental
 
@@ -22,3 +19,5 @@
 - [ ] keep researching GRUs
 - [ ] keep researching other gradient stabilization techniques
 - [ ] keep researching VNCA, HyperNCA, TextNCA, CAX, and Pre-pre-training LLMS
+- [ ] try BPE dropout (may improve embedding semantics and generalization)
+- [ ] try freezing prefix visible layers
